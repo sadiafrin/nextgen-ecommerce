@@ -5,12 +5,14 @@ import OrderProvider from './context/OrderContext'; // ✅ default import
 import AuthProvider from './context/AuthContext';   // ✅ default import
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
+import Footer from './components/Footer';           // ✅ ছোট হাতের 'components'
+import AdminDashboard from './components/AdminDashboard';
 
-// ⚠️ CartPage, OrdersPage, LoginPage → সাধারণত `pages` ফোল্ডারে রাখা হয়
+// ⚠️ সব page একই ফোল্ডারে রাখো (components/pages)
 import CartPage from './context/CartPage'; 
 import OrdersPage from './context/OrdersPage'; 
 import LoginPage from './context/LoginPage'; 
-import RegisterPage from './context/RegisterPage'; // ✅ নতুন signup page
+import RegisterPage from './context/RegisterPage'; 
 
 import localforage from 'localforage'; 
 import productsData from './products.json';
@@ -18,7 +20,6 @@ import './App.css';
 
 function App() {
   useEffect(() => {
-    // ✅ Service Worker Registration
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
@@ -27,7 +28,6 @@ function App() {
       });
     }
 
-    // ✅ IndexedDB Initialization with localforage
     const initDatabase = async () => {
       try {
         const existingData = await localforage.getItem('products');
@@ -43,21 +43,25 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>   {/* ✅ default import দিয়ে wrap */}
+    <AuthProvider>
       <CartProvider>
         <OrderProvider>
           <Router>
-            <div className="flex min-h-screen bg-gray-100">
-              <Sidebar />
-              <main className="flex-1">
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/cart" element={<CartPage />} />
-                  <Route path="/orders" element={<OrdersPage />} />
-                  <Route path="/login" element={<LoginPage />} /> {/* ✅ Login route */}
-                  <Route path="/register" element={<RegisterPage />} /> {/* ✅ Register route */}
-                </Routes>
-              </main>
+            <div className="flex min-h-screen bg-gray-100 flex-col">
+              <div className="flex flex-1">
+                <Sidebar />
+                <main className="flex-1">
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/cart" element={<CartPage />} />
+                    <Route path="/orders" element={<OrdersPage />} />
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+                    <Route path="/admin" element={<AdminDashboard />} />
+                  </Routes>
+                </main>
+              </div>
+              <Footer /> {/* ✅ Footer সব page এ দেখাবে */}
             </div>
           </Router>
         </OrderProvider>

@@ -14,7 +14,18 @@ export default function LoginPage() {
     const success = login(email, password); // ✅ AuthContext থেকে credentials check
 
     if (success) {
-      navigate("/cart"); // ✅ Login হলে cart এ redirect হবে
+      // LocalStorage থেকে user খুঁজে বের করো
+      const users = JSON.parse(localStorage.getItem("users")) || [];
+      const foundUser = users.find(
+        (u) => u.email === email && u.password === password
+      );
+
+      // ✅ role অনুযায়ী redirect
+      if (foundUser?.role === "admin") {
+        navigate("/admin"); // admin হলে admin dashboard এ যাবে
+      } else {
+        navigate("/cart"); // customer হলে cart এ যাবে
+      }
     } else {
       setError("Invalid email or password!"); // ❌ ভুল হলে error দেখাবে
     }
@@ -23,7 +34,7 @@ export default function LoginPage() {
   return (
     <div className="flex justify-center items-center h-screen bg-gray-100">
       <form onSubmit={handleLogin} className="bg-white p-8 rounded shadow-md w-96">
-        <h2 className="text-2xl font-bold mb-6">Customer Login</h2>
+        <h2 className="text-2xl font-bold mb-6">Login</h2>
 
         {error && <p className="text-red-500 mb-4">{error}</p>}
 

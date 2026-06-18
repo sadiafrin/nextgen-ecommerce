@@ -25,7 +25,21 @@ const CartProvider = ({ children }) => {
 
   // ✅ cart functions
   const addToCart = (item) => {
-    setCart((prev) => [...prev, item]);
+    setCart((prev) => {
+      const exists = prev.find((i) => i.id === item.id);
+      const priceValue = Number(item.price?.toString().replace(/[^0-9.-]+/g, "")); // ✅ সবসময় number
+
+      if (exists) {
+        // যদি item আগে থাকে → quantity বাড়াও
+        return prev.map((i) =>
+          i.id === item.id
+            ? { ...i, quantity: (i.quantity || 1) + 1, price: priceValue }
+            : i
+        );
+      }
+      // নতুন item হলে → quantity = 1 দিয়ে add করো
+      return [...prev, { ...item, quantity: 1, price: priceValue }];
+    });
   };
 
   const removeFromCart = (id) => {
@@ -35,7 +49,7 @@ const CartProvider = ({ children }) => {
   const updateQuantity = (id, quantity) => {
     setCart((prev) =>
       prev.map((i) =>
-        i.id === id ? { ...i, quantity } : i
+        i.id === id ? { ...i, quantity: quantity > 0 ? quantity : 1 } : i
       )
     );
   };
@@ -46,7 +60,9 @@ const CartProvider = ({ children }) => {
   };
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart }}>
+    <CartContext.Provider
+      value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart }}
+    >
       {children}
     </CartContext.Provider>
   );

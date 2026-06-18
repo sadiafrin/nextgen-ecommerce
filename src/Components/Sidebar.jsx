@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileText, Settings, LogOut, ShoppingCart, LogIn } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, LogOut, ShoppingCart, LogIn, UserPlus } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useContext } from 'react';
 import { CartContext } from '../context/CartContext';
@@ -44,32 +44,45 @@ export default function Sidebar() {
             </Link>
           ))}
 
-          {/* ✅ Login option */}
-          {!user && (
-            <Link to="/login">
+          {/* ✅ Admin option শুধু তখনই দেখাবে যখন user.isAdmin true */}
+          {user?.isAdmin && (
+            <Link to="/admin">
               <li 
                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors mt-2 ${
-                  location.pathname === '/login' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                  location.pathname === '/admin' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                <LogIn size={20} />
-                <span className="font-medium">Login</span>
+                <LayoutDashboard size={20} />
+                <span className="font-medium">Admin Dashboard</span>
               </li>
             </Link>
           )}
 
-          {/* ✅ Register option */}
+          {/* ✅ Login/Register option শুধু তখনই দেখাবে যখন user নেই */}
           {!user && (
-            <Link to="/register">
-              <li 
-                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors mt-2 ${
-                  location.pathname === '/register' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <LogIn size={20} />
-                <span className="font-medium">Register</span>
-              </li>
-            </Link>
+            <>
+              <Link to="/login">
+                <li 
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors mt-2 ${
+                    location.pathname === '/login' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <LogIn size={20} />
+                  <span className="font-medium">Login</span>
+                </li>
+              </Link>
+
+              <Link to="/register">
+                <li 
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors mt-2 ${
+                    location.pathname === '/register' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <UserPlus size={20} />
+                  <span className="font-medium">Register</span>
+                </li>
+              </Link>
+            </>
           )}
         </ul>
       </div>

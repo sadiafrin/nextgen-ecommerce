@@ -1,25 +1,6 @@
 import { useState } from 'react';
-import ProductCard from './ProductCard'; 
 import SearchBar from './searchbar'; 
 import ProductGrid from './ProductGrid';
-
-// ১. নতুন স্ট্যাটস কম্পোনেন্টটি এখানেই ডিফাইন করলাম (সহজ করার জন্য)
-const DashboardStats = () => (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <p className="text-gray-500 text-sm">New Customers</p>
-      <h3 className="text-2xl font-bold text-gray-800">845</h3>
-    </div>
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <p className="text-gray-500 text-sm">Total Orders</p>
-      <h3 className="text-2xl font-bold text-gray-800">2,130</h3>
-    </div>
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <p className="text-gray-500 text-sm">Monthly Sales</p>
-      <h3 className="text-2xl font-bold text-gray-800">৳1,50,000</h3>
-    </div>
-  </div>
-);
 
 export default function Dashboard() {
   const categories = ['shoes', 'watch', 'handbag', 'laptop', 'camera', 'perfume', 'sneakers'];
@@ -63,12 +44,11 @@ export default function Dashboard() {
       {/* ওয়েলকাম সেকশন */}
       <div className="mb-8">
         <h2 className="text-3xl font-bold text-gray-800">Welcome, Alex Carter!</h2>
-        <p className="text-gray-500">Here is your business overview today.</p>
+        <p className="text-gray-500">Browse products and manage your cart.</p>
       </div>
 
-      {/* স্ট্যাটস কম্পোনেন্ট */}
-      <DashboardStats />
-      
+      {/* ✅ এখানে আর business stats নেই */}
+
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Trending Products</h2>
         <SearchBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} />

@@ -1,27 +1,27 @@
 import { useContext } from 'react';
 import { CartContext } from '../context/CartContext';
 import { OrderContext } from '../context/OrderContext';
-import { AuthContext } from '../context/AuthContext'; // ✅ Login context ইমপোর্ট
-import { useNavigate } from 'react-router-dom';        // ✅ Redirect করার জন্য
+import { AuthContext } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 
 export default function CartPage() {
-  const { cart, removeFromCart, updateQuantity, setCart } = useContext(CartContext);
+  const { cart, removeFromCart, updateQuantity, clearCart } = useContext(CartContext);
   const { placeOrder } = useContext(OrderContext);
-  const { user } = useContext(AuthContext); // ✅ user state নিলাম
+  const { user } = useContext(AuthContext);
   const navigate = useNavigate();
 
+  // ✅ সবসময় number হিসেবে হিসাব করো
   const totalPrice = cart.reduce((total, item) => {
-    const priceValue = parseFloat(item.price.toString().replace(/[^0-9.-]+/g, ""));
+    const priceValue = Number(item.price?.toString().replace(/[^0-9.-]+/g, ""));
     const quantity = item.quantity || 1;
     return total + (isNaN(priceValue) ? 0 : priceValue * quantity);
   }, 0);
 
   const handleCheckout = () => {
-    // ✅ Login check
     if (!user) {
       alert("Please login to checkout!");
-      navigate("/login"); // Login না থাকলে /login এ redirect হবে
+      navigate("/login");
       return;
     }
 
@@ -30,24 +30,37 @@ export default function CartPage() {
       return;
     }
 
-    // ✅ OrderContext এ পাঠানো
+    // ✅ নতুন order বানানো (number হিসেবে totalPrice save)
     const newOrder = {
+      id: Date.now(),
       items: cart,
-      totalAmount: totalPrice,
+      totalPrice: Number(totalPrice.toFixed(2)), 
+      customer: user.email
     };
+
+    // ✅ LocalStorage এ orders save করা
+    const orders = JSON.parse(localStorage.getItem("orders")) || [];
+    orders.push(newOrder);
+    localStorage.setItem("orders", JSON.stringify(orders));
+
+    // ✅ Context এও order পাঠানো
     placeOrder(newOrder);
 
     // ✅ Invoice তৈরি
     const doc = new jsPDF();
     doc.text("Invoice - NexGen E-Commerce", 20, 20);
     cart.forEach((item, index) => {
-      doc.text(`${index + 1}. ${item.name} (x${item.quantity || 1}) - ${item.price}`, 20, 40 + (index * 10));
+      const itemPrice = Number(item.price?.toString().replace(/[^0-9.-]+/g, ""));
+      doc.text(
+        `${index + 1}. ${item.name} (x${item.quantity || 1}) - ৳${itemPrice}`,
+        20,
+        40 + (index * 10)
+      );
     });
-    doc.text(`Total: ${totalPrice.toFixed(2)}`, 20, 50 + (cart.length * 10));
+    doc.text(`Total: ৳${totalPrice.toFixed(2)}`, 20, 50 + (cart.length * 10));
     doc.save("invoice.pdf");
 
-    // ✅ Cart খালি করা
-    setCart([]);
+    clearCart(); // ✅ cart খালি করা
     alert("✅ Order placed successfully! Cart is now empty.");
   };
 
@@ -70,17 +83,35 @@ export default function CartPage() {
                   <p className="text-blue-600">{item.price}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => updateQuantity(item.id, -1)} className="px-3 py-1 bg-gray-200 rounded">-</button>
+                  <button
+                    onClick={() => updateQuantity(item.id, (item.quantity || 1) - 1)}
+                    className="px-3 py-1 bg-gray-200 rounded"
+                  >
+                    -
+                  </button>
+
                   <span className="font-bold">{item.quantity || 1}</span>
-                  <button onClick={() => updateQuantity(item.id, 1)} className="px-3 py-1 bg-gray-200 rounded">+</button>
-                  <button onClick={() => removeFromCart(item.id)} className="text-red-500 ml-4">Remove</button>
+
+                  <button
+                    onClick={() => updateQuantity(item.id, (item.quantity || 1) + 1)}
+                    className="px-3 py-1 bg-gray-200 rounded"
+                  >
+                    +
+                  </button>
+
+                  <button
+                    onClick={() => removeFromCart(item.id)}
+                    className="text-red-500 ml-4"
+                  >
+                    Remove
+                  </button>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="mt-6 text-right">
-            <p className="text-xl font-bold">Total: {totalPrice.toFixed(2)}</p>
+            <p className="text-xl font-bold">Total: ৳{totalPrice.toFixed(2)}</p>
           </div>
 
           <div className="mt-8 flex justify-end">
