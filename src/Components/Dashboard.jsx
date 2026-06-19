@@ -43,7 +43,7 @@ export default function Dashboard() {
     <div className="flex-1 p-8 bg-gray-50">
       {/* ওয়েলকাম সেকশন */}
       <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-800">Welcome, Alex Carter!</h2>
+        <h2 className="text-3xl font-bold text-gray-800">Welcome</h2>
         <p className="text-gray-500">Browse products and manage your cart.</p>
       </div>
 
