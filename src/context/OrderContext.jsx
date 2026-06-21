@@ -15,10 +15,20 @@ export const OrderProvider = ({ children }) => {
     }
   });
 
-  // ৩. অর্ডার পরিবর্তিত হলে localStorage-এ সেভ করা
+  // ৩. অর্ডার পরিবর্তিত হলে localStorage-এ সেভ + metrics আপডেট
   useEffect(() => {
     try {
       localStorage.setItem('orders', JSON.stringify(orders));
+
+      // 🔹 Metrics হিসাব করা
+      const totalOrders = orders.length;
+      const monthlySales = orders.reduce(
+        (sum, order) => sum + Number(order.totalPrice || 0),
+        0
+      );
+
+      localStorage.setItem('totalOrders', totalOrders);
+      localStorage.setItem('monthlySales', monthlySales);
     } catch (err) {
       console.error("Error saving orders:", err);
     }
@@ -40,9 +50,11 @@ export const OrderProvider = ({ children }) => {
   const clearOrders = () => {
     setOrders([]);
     localStorage.removeItem('orders');
+    localStorage.setItem('totalOrders', 0);
+    localStorage.setItem('monthlySales', 0);
   };
 
-  // ৬. নির্দিষ্ট অর্ডার remove করার ফাংশন (extra সুবিধা)
+  // ৬. নির্দিষ্ট অর্ডার remove করার ফাংশন
   const removeOrder = (id) => {
     setOrders((prev) => prev.filter((order) => order.id !== id));
   };
@@ -53,4 +65,5 @@ export const OrderProvider = ({ children }) => {
     </OrderContext.Provider>
   );
 };
+
 export default OrderProvider;

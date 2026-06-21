@@ -1,16 +1,26 @@
 import { useState } from "react";
+import { usersStore } from "../db"; // ✅ db.js থেকে import করো
 
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
 
-    // LocalStorage থেকে users পড়া
-    const users = JSON.parse(localStorage.getItem("users")) || [];
+    // 🔹 আগে check করো user আছে কিনা
+    const allUsers = [];
+    await usersStore.iterate((value) => {
+      allUsers.push(value);
+    });
 
-    // নতুন user বানানো
+    const exists = allUsers.find(u => u.email === email);
+    if (exists) {
+      alert("❌ User already exists!");
+      return;
+    }
+
+    // 🔹 নতুন user বানানো
     const newUser = {
       email,
       password,
@@ -18,13 +28,13 @@ export default function Register() {
       isAdmin: false
     };
 
-    // users এ যোগ করা
-    users.push(newUser);
+    // 🔹 usersStore এ save করা
+    const id = `user_${Date.now()}`;
+    await usersStore.setItem(id, newUser);
 
-    // LocalStorage এ আবার save করা
-    localStorage.setItem("users", JSON.stringify(users));
-
-    alert("Registration successful!");
+    alert("✅ Registration successful!");
+    setEmail("");
+    setPassword("");
   };
 
   return (

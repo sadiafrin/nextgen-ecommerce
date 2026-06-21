@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileText, Settings, LogOut, ShoppingCart, LogIn, UserPlus, Store } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, LogOut, ShoppingCart, LogIn, UserPlus } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useContext } from 'react';
 import { CartContext } from '../context/CartContext';
@@ -20,9 +20,13 @@ export default function Sidebar() {
     <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col justify-between p-6">
       <div>
         {/* ✅ Logo + Title */}
-        <div className="flex items-center gap-3 mb-10">
-          <Store size={88} className="text-blue-700" /> 
-          <h1 className="text-2xl font-extrabold text-blue-700 tracking-wide uppercase">
+        <div className="flex items-center mb-10">
+          <img 
+            src="nexgen logo.png"  // logo
+            alt="NexGen Logo" 
+            className="w-20 h-20 mr-0"
+          />
+          <h1 className="text-xl font-extrabold text-blue-700 tracking-tight">
             NEXGEN E-COMMERCE
           </h1>
         </div>

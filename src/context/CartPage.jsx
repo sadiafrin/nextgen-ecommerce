@@ -4,6 +4,7 @@ import { OrderContext } from '../context/OrderContext';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
+import { ordersStore, metricsStore } from '../db'; // ✅ নতুন import
 
 export default function CartPage() {
   const { cart, removeFromCart, updateQuantity, clearCart } = useContext(CartContext);
@@ -18,7 +19,7 @@ export default function CartPage() {
     return total + (isNaN(priceValue) ? 0 : priceValue * quantity);
   }, 0);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!user) {
       alert("Please login to checkout!");
       navigate("/login");
@@ -35,13 +36,19 @@ export default function CartPage() {
       id: Date.now(),
       items: cart,
       totalPrice: Number(totalPrice.toFixed(2)), 
-      customer: user.email
+      customer: user.email,
+      date: new Date().toISOString()
     };
 
-    // ✅ LocalStorage এ orders save করা
-    const orders = JSON.parse(localStorage.getItem("orders")) || [];
-    orders.push(newOrder);
-    localStorage.setItem("orders", JSON.stringify(orders));
+    // ✅ IndexedDB এ orders save করা
+    await ordersStore.setItem(`order_${newOrder.id}`, newOrder);
+
+    // ✅ Metrics update
+    let totalOrders = parseInt(await metricsStore.getItem("totalOrders") || "0");
+    await metricsStore.setItem("totalOrders", totalOrders + 1);
+
+    let monthlySales = parseInt(await metricsStore.getItem("monthlySales") || "0");
+    await metricsStore.setItem("monthlySales", monthlySales + newOrder.totalPrice);
 
     // ✅ Context এও order পাঠানো
     placeOrder(newOrder);

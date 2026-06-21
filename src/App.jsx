@@ -1,14 +1,14 @@
 import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import CartProvider from './context/CartContext';   // ✅ default import
-import OrderProvider from './context/OrderContext'; // ✅ default import
-import AuthProvider from './context/AuthContext';   // ✅ default import
+import CartProvider from './context/CartContext';   // ✅ 그대로
+import OrderProvider from './context/OrderContext'; // ✅ 그대로
+import AuthProvider from './context/AuthContext';   // ✅ 그대로
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
-import Footer from './components/Footer';           // ✅ ছোট হাতের 'components'
+import Footer from './components/Footer';
 import AdminDashboard from './components/AdminDashboard';
 
-// ⚠️ সব page একই ফোল্ডারে রাখো (components/pages)
+// ⚠️ 그대로 context ফোল্ডার থেকে import
 import CartPage from './context/CartPage'; 
 import OrdersPage from './context/OrdersPage'; 
 import LoginPage from './context/LoginPage'; 

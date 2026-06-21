@@ -1,26 +1,60 @@
 import { createContext, useState, useEffect } from "react";
+import { usersStore, metricsStore } from "../db"; // ✅ metricsStore import
 
 export const AuthContext = createContext();
 
 const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); // { email, role, isAdmin }
+  const [user, setUser] = useState(null);
 
-  // LocalStorage থেকে users লোড করা
-  const getUsers = () => {
-    return JSON.parse(localStorage.getItem("users")) || [];
+  // ✅ Metrics initialize (refresh/browser clear হলে default set হবে)
+  const initMetrics = async () => {
+    if (!(await metricsStore.getItem("newCustomers"))) {
+      await metricsStore.setItem("newCustomers", 0);
+    }
+    if (!(await metricsStore.getItem("totalOrders"))) {
+      await metricsStore.setItem("totalOrders", 0);
+    }
+    if (!(await metricsStore.getItem("monthlySales"))) {
+      await metricsStore.setItem("monthlySales", 0);
+    }
+    if (!(await metricsStore.getItem("totalLogins"))) {
+      await metricsStore.setItem("totalLogins", 0);
+    }
   };
 
-  // ✅ Refresh হলে LocalStorage থেকে currentUser লোড করা
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
-    if (savedUser) {
-      setUser(savedUser);
-    }
+    const loadUser = async () => {
+      await initMetrics(); // ✅ metrics always ready
+
+      const savedUser = await usersStore.getItem("currentUser");
+      if (savedUser) setUser(savedUser);
+
+      // 🔹 Ensure default admin exists
+      let adminExists = false;
+      await usersStore.iterate((value) => {
+        if (value.role === "admin") adminExists = true;
+      });
+      if (!adminExists) {
+        const adminUser = {
+          email: "admin@example.com",
+          password: "admin123",
+          role: "admin",
+          isAdmin: true
+        };
+        await usersStore.setItem("admin", adminUser);
+      }
+    };
+    loadUser();
   }, []);
 
-  const login = (email, password) => {
-    const users = getUsers();
-    const foundUser = users.find(
+  // ✅ Login function
+  const login = async (email, password) => {
+    const allUsers = [];
+    await usersStore.iterate((value) => {
+      allUsers.push(value);
+    });
+
+    const foundUser = allUsers.find(
       (u) => u.email === email && u.password === password
     );
 
@@ -28,37 +62,48 @@ const AuthProvider = ({ children }) => {
       const loggedInUser = {
         email: foundUser.email,
         role: foundUser.role,
-        isAdmin: foundUser.role === "admin" // ✅ role check
+        isAdmin: foundUser.role === "admin"
       };
       setUser(loggedInUser);
+      await usersStore.setItem("currentUser", loggedInUser);
 
-      // ✅ LocalStorage এ currentUser save করা
-      localStorage.setItem("currentUser", JSON.stringify(loggedInUser));
-      return true; // login success
+      // 🔹 Metrics update: total logins বাড়ানো
+      let totalLogins = parseInt(await metricsStore.getItem("totalLogins") || "0");
+      await metricsStore.setItem("totalLogins", totalLogins + 1);
+
+      return true;
     }
-    return false; // login failed
+    return false;
   };
 
-  const logout = () => {
+  // ✅ Logout function
+  const logout = async () => {
     setUser(null);
-    localStorage.removeItem("currentUser"); // ✅ clear on logout
+    await usersStore.removeItem("currentUser");
   };
 
-  // ✅ Register function: নতুন user যোগ করবে localStorage এ
-  const register = (email, password, role = "customer") => {
-    const users = getUsers();
-    const exists = users.find((u) => u.email === email);
-    if (exists) {
-      return false; // already exists
-    }
+  // ✅ Register function
+  const register = async (email, password, role = "customer") => {
+    const allUsers = [];
+    await usersStore.iterate((value) => {
+      allUsers.push(value);
+    });
+
+    const exists = allUsers.find((u) => u.email === email);
+    if (exists) return false;
+
     const newUser = {
       email,
       password,
       role,
-      isAdmin: role === "admin" // ✅ consistency
+      isAdmin: role === "admin"
     };
-    users.push(newUser);
-    localStorage.setItem("users", JSON.stringify(users));
+    await usersStore.setItem(`user_${Date.now()}`, newUser);
+
+    // 🔹 Metrics update: নতুন customer হলে count বাড়ানো
+    let newCustomers = parseInt(await metricsStore.getItem("newCustomers") || "0");
+    await metricsStore.setItem("newCustomers", newCustomers + 1);
+
     return true;
   };
 
