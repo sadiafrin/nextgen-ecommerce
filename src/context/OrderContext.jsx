@@ -1,10 +1,10 @@
 import { createContext, useState, useEffect } from 'react';
+import { addDoc, collection } from "firebase/firestore";
+import { db } from "../firebase"; // ✅ সঠিক path
 
-// ১. কনটেক্সট তৈরি করা
 export const OrderContext = createContext();
 
 export const OrderProvider = ({ children }) => {
-  // ২. localStorage থেকে অর্ডার লোড করা
   const [orders, setOrders] = useState(() => {
     try {
       const savedOrders = localStorage.getItem('orders');
@@ -15,12 +15,11 @@ export const OrderProvider = ({ children }) => {
     }
   });
 
-  // ৩. অর্ডার পরিবর্তিত হলে localStorage-এ সেভ + metrics আপডেট
+  // 🔹 যখন orders পরিবর্তিত হবে তখন localStorage এ সেভ + metrics আপডেট
   useEffect(() => {
     try {
       localStorage.setItem('orders', JSON.stringify(orders));
 
-      // 🔹 Metrics হিসাব করা
       const totalOrders = orders.length;
       const monthlySales = orders.reduce(
         (sum, order) => sum + Number(order.totalPrice || 0),
@@ -34,19 +33,27 @@ export const OrderProvider = ({ children }) => {
     }
   }, [orders]);
 
-  // ৪. নতুন অর্ডার যোগ করার ফাংশন
-  const placeOrder = (newOrder) => {
-    setOrders((prev) => [
-      ...prev,
-      {
-        ...newOrder,
-        id: Date.now(), // unique id
-        date: new Date().toLocaleDateString(), // order date
-      },
-    ]);
+  // 🔹 নতুন অর্ডার যোগ + Firestore এ save
+  const placeOrder = async (newOrder) => {
+    const orderData = {
+      ...newOrder,
+      id: Date.now(),
+      date: new Date().toLocaleDateString(),
+    };
+
+    // Local state update
+    setOrders((prev) => [...prev, orderData]);
+
+    // Firestore এ save
+    try {
+      await addDoc(collection(db, "orders"), orderData);
+      console.log("✅ Order saved to Firestore!", orderData);
+    } catch (err) {
+      console.error("❌ Error saving order to Firestore:", err);
+    }
   };
 
-  // ৫. সব অর্ডার clear করার ফাংশন
+  // 🔹 সব অর্ডার clear করা
   const clearOrders = () => {
     setOrders([]);
     localStorage.removeItem('orders');
@@ -54,7 +61,7 @@ export const OrderProvider = ({ children }) => {
     localStorage.setItem('monthlySales', 0);
   };
 
-  // ৬. নির্দিষ্ট অর্ডার remove করার ফাংশন
+  // 🔹 নির্দিষ্ট অর্ডার remove করা
   const removeOrder = (id) => {
     setOrders((prev) => prev.filter((order) => order.id !== id));
   };

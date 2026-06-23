@@ -8,17 +8,12 @@ const AuthProvider = ({ children }) => {
 
   // ✅ Metrics initialize (refresh/browser clear হলে default set হবে)
   const initMetrics = async () => {
-    if (!(await metricsStore.getItem("newCustomers"))) {
-      await metricsStore.setItem("newCustomers", 0);
-    }
-    if (!(await metricsStore.getItem("totalOrders"))) {
-      await metricsStore.setItem("totalOrders", 0);
-    }
-    if (!(await metricsStore.getItem("monthlySales"))) {
-      await metricsStore.setItem("monthlySales", 0);
-    }
-    if (!(await metricsStore.getItem("totalLogins"))) {
-      await metricsStore.setItem("totalLogins", 0);
+    const keys = ["newCustomers", "totalOrders", "monthlySales", "totalLogins"];
+    for (const key of keys) {
+      const existing = await metricsStore.getItem(key);
+      if (existing === null || existing === undefined) {
+        await metricsStore.setItem(key, 0);
+      }
     }
   };
 

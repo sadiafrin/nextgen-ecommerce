@@ -4,7 +4,7 @@ import { OrderContext } from '../context/OrderContext';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { ordersStore, metricsStore } from '../db'; // ✅ নতুন import
+import { ordersStore, metricsStore } from '../db';
 
 export default function CartPage() {
   const { cart, removeFromCart, updateQuantity, clearCart } = useContext(CartContext);
@@ -12,7 +12,6 @@ export default function CartPage() {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  // ✅ সবসময় number হিসেবে হিসাব করো
   const totalPrice = cart.reduce((total, item) => {
     const priceValue = Number(item.price?.toString().replace(/[^0-9.-]+/g, ""));
     const quantity = item.quantity || 1;
@@ -31,16 +30,15 @@ export default function CartPage() {
       return;
     }
 
-    // ✅ নতুন order বানানো (number হিসেবে totalPrice save)
     const newOrder = {
       id: Date.now(),
       items: cart,
-      totalPrice: Number(totalPrice.toFixed(2)), 
+      totalPrice: Number(totalPrice.toFixed(2)),
       customer: user.email,
       date: new Date().toISOString()
     };
 
-    // ✅ IndexedDB এ orders save করা
+    // ✅ IndexedDB এ save
     await ordersStore.setItem(`order_${newOrder.id}`, newOrder);
 
     // ✅ Metrics update
@@ -50,8 +48,8 @@ export default function CartPage() {
     let monthlySales = parseInt(await metricsStore.getItem("monthlySales") || "0");
     await metricsStore.setItem("monthlySales", monthlySales + newOrder.totalPrice);
 
-    // ✅ Context এও order পাঠানো
-    placeOrder(newOrder);
+    // ✅ Context এ পাঠানো → Firestore এও যাবে
+    await placeOrder(newOrder);
 
     // ✅ Invoice তৈরি
     const doc = new jsPDF();
@@ -67,7 +65,7 @@ export default function CartPage() {
     doc.text(`Total: ৳${totalPrice.toFixed(2)}`, 20, 50 + (cart.length * 10));
     doc.save("invoice.pdf");
 
-    clearCart(); // ✅ cart খালি করা
+    clearCart();
     alert("✅ Order placed successfully! Cart is now empty.");
   };
 
