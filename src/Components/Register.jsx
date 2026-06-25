@@ -1,67 +1,97 @@
-import { useState } from "react";
-import { usersStore } from "../db"; // ✅ db.js থেকে import করো
+// src/context/RegisterPage.jsx
+import { useState } from 'react';
+import { useAuth } from './AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
 
-export default function Register() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function RegisterPage() {
+  const { register } = useAuth();
+  const navigate = useNavigate();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
 
-    // 🔹 আগে check করো user আছে কিনা
-    const allUsers = [];
-    await usersStore.iterate((value) => {
-      allUsers.push(value);
-    });
-
-    const exists = allUsers.find(u => u.email === email);
-    if (exists) {
-      alert("❌ User already exists!");
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
-    // 🔹 নতুন user বানানো
-    const newUser = {
-      email,
-      password,
-      role: "customer",
-      isAdmin: false
-    };
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
 
-    // 🔹 usersStore এ save করা
-    const id = `user_${Date.now()}`;
-    await usersStore.setItem(id, newUser);
-
-    alert("✅ Registration successful!");
-    setEmail("");
-    setPassword("");
+    setLoading(true);
+    try {
+      await register(name, email, password);
+      navigate('/');
+    } catch (err) {
+      setError(err.message || 'Registration failed');
+    }
+    setLoading(false);
   };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
-      <form onSubmit={handleRegister} className="bg-white p-8 rounded shadow-md w-96">
-        <h2 className="text-2xl font-bold mb-6">Register</h2>
-
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-4 p-2 border rounded"
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full mb-4 p-2 border rounded"
-          required
-        />
-        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-          Register
-        </button>
-      </form>
+    <div className="min-h-[70vh] flex items-center justify-center bg-gray-50 py-12 px-4">
+      <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg">
+        <h2 className="text-3xl font-bold text-center text-gray-800">Create Account</h2>
+        <p className="text-center text-gray-500 mt-2">Register as a new customer</p>
+        
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Full Name"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email Address"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password (min 6 characters)"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm Password"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+          
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+          >
+            {loading ? 'Creating Account...' : 'Register'}
+          </button>
+        </form>
+        
+        <p className="text-center text-sm text-gray-500 mt-4">
+          Already have an account? <Link to="/login" className="text-blue-600 hover:underline">Login</Link>
+        </p>
+      </div>
     </div>
   );
 }

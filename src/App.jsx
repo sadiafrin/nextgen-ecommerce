@@ -1,67 +1,76 @@
-import { useEffect } from 'react';
+// src/App.jsx
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import CartProvider from './context/CartContext';   // ✅ 그대로
-import OrderProvider from './context/OrderContext'; // ✅ 그대로
-import AuthProvider from './context/AuthContext';   // ✅ 그대로
-import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
-import Footer from './components/Footer';
-import AdminDashboard from './components/AdminDashboard';
-
-// ⚠️ 그대로 context ফোল্ডার থেকে import
-import CartPage from './context/CartPage'; 
-import OrdersPage from './context/OrdersPage'; 
-import LoginPage from './context/LoginPage'; 
-import RegisterPage from './context/RegisterPage'; 
-
-import localforage from 'localforage'; 
-import productsData from './products.json';
+import { CartProvider } from './context/CartContext';
+import { AuthProvider } from './context/AuthContext';
+import { OrderProvider } from './context/OrderContext';
+import Navbar from './Components/navbar';
+import Footer from './Components/Footer';
+import Dashboard from './Components/Dashboard';
+import LoginPage from './context/LoginPage';
+import RegisterPage from './context/RegisterPage';
+import OrdersPage from './context/OrdersPage';
+import CartPage from './context/CartPage';
+import AdminDashboard from './Components/AdminDashboard';
+import ContactPage from './Components/ContactPage'; // ✅ যোগ করুন
+import Toast from './Components/Toast';
+import SyncStatus from './Components/SyncStatus';
 import './App.css';
 
 function App() {
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then(() => console.log('Service Worker Registered!'))
-          .catch((err) => console.log('Registration Failed:', err));
-      });
-    }
+  const [toast, setToast] = useState(null);
 
-    const initDatabase = async () => {
-      try {
-        const existingData = await localforage.getItem('products');
-        if (!existingData) {
-          await localforage.setItem('products', productsData);
-        }
-      } catch (err) {
-        console.error('Error initializing IndexedDB:', err);
-      }
+  useEffect(() => {
+    const handleToast = (event) => {
+      setToast(event.detail);
     };
 
-    initDatabase();
+    window.addEventListener('showToast', handleToast);
+    return () => window.removeEventListener('showToast', handleToast);
   }, []);
+
+  const hideToast = () => {
+    setToast(null);
+  };
 
   return (
     <AuthProvider>
       <CartProvider>
         <OrderProvider>
           <Router>
-            <div className="flex min-h-screen bg-gray-100 flex-col">
-              <div className="flex flex-1">
-                <Sidebar />
-                <main className="flex-1">
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/cart" element={<CartPage />} />
-                    <Route path="/orders" element={<OrdersPage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/register" element={<RegisterPage />} />
-                    <Route path="/admin" element={<AdminDashboard />} />
-                  </Routes>
-                </main>
-              </div>
-              <Footer /> {/* ✅ Footer সব page এ দেখাবে */}
+            <div className="flex flex-col min-h-screen bg-gray-50">
+              <Navbar />
+              <main className="flex-grow container mx-auto px-4 py-6">
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                  <Route path="/cart" element={<CartPage />} />
+                  <Route path="/orders" element={<OrdersPage />} />
+                  <Route path="/admin" element={<AdminDashboard />} />
+                  <Route path="/contact" element={<ContactPage />} /> {/* ✅ যোগ করুন */}
+                  <Route path="*" element={
+                    <div className="flex items-center justify-center min-h-[60vh]">
+                      <div className="text-center">
+                        <h1 className="text-6xl font-bold text-gray-300">404</h1>
+                        <p className="text-xl text-gray-500 mt-4">Page not found</p>
+                        <a href="/" className="mt-6 inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
+                          Go Home
+                        </a>
+                      </div>
+                    </div>
+                  } />
+                </Routes>
+              </main>
+              <Footer />
+              {toast && (
+                <Toast
+                  message={toast.message}
+                  type={toast.type || 'success'}
+                  onClose={hideToast}
+                />
+              )}
+              <SyncStatus />
             </div>
           </Router>
         </OrderProvider>

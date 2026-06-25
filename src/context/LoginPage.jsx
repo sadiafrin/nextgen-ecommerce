@@ -1,63 +1,95 @@
-import { useState, useContext } from "react";
-import { AuthContext } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+// src/context/LoginPage.jsx
+import React, { useState } from 'react';
+import { useAuth } from './AuthContext';  // ✅ useAuth ব্যবহার করুন
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function LoginPage() {
-  const { login } = useContext(AuthContext);
+  const { login, loading, error } = useAuth();  // ✅ useAuth ব্যবহার করুন
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [localError, setLocalError] = useState('');
 
-  const handleLogin = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = login(email, password); // ✅ AuthContext থেকে credentials check
-
-    if (success) {
-      // LocalStorage থেকে user খুঁজে বের করো
-      const users = JSON.parse(localStorage.getItem("users")) || [];
-      const foundUser = users.find(
-        (u) => u.email === email && u.password === password
-      );
-
-      // ✅ role অনুযায়ী redirect
-      if (foundUser?.role === "admin") {
-        navigate("/admin"); // admin হলে admin dashboard এ যাবে
-      } else {
-        navigate("/cart"); // customer হলে cart এ যাবে
-      }
-    } else {
-      setError("Invalid email or password!"); // ❌ ভুল হলে error দেখাবে
+    setLocalError('');
+    
+    if (!email || !password) {
+      setLocalError('Please fill in all fields');
+      return;
+    }
+    
+    try {
+      await login(email, password);
+      navigate('/');
+    } catch (err) {
+      setLocalError(err.message || 'Login failed. Please try again.');
     }
   };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
-      <form onSubmit={handleLogin} className="bg-white p-8 rounded shadow-md w-96">
-        <h2 className="text-2xl font-bold mb-6">Login</h2>
+    <div className="min-h-[70vh] flex items-center justify-center bg-gray-50 py-12 px-4">
+      <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-gray-800">Welcome Back</h2>
+          <p className="text-gray-500 mt-2">Login to your account</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email Address"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          
+          {(localError || error) && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 text-sm">{localError || error}</p>
+            </div>
+          )}
 
-        {error && <p className="text-red-500 mb-4">{error}</p>}
-
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-4 p-2 border rounded"
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full mb-4 p-2 border rounded"
-          required
-        />
-        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-          Login
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full py-2 rounded-lg font-medium transition ${
+              loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'
+            }`}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Loading...
+              </span>
+            ) : (
+              'Login'
+            )}
+          </button>
+        </form>
+        
+        <p className="text-center text-sm text-gray-500 mt-4">
+          Don't have an account? <Link to="/register" className="text-blue-600 hover:underline">Register</Link>
+        </p>
+        
+        <div className="mt-4 p-3 bg-gray-50 rounded-lg text-center text-xs text-gray-400">
+          <p>Demo: admin@example.com / password123</p>
+          <p>or user@example.com / password123</p>
+        </div>
+      </div>
     </div>
   );
 }

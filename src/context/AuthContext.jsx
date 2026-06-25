@@ -1,112 +1,241 @@
-import { createContext, useState, useEffect } from "react";
-import { usersStore, metricsStore } from "../db"; // ✅ metricsStore import
+// src/context/AuthContext.jsx
+import React, { createContext, useState, useContext, useEffect } from 'react';
+import { auth, db } from '../firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  updateProfile
+} from 'firebase/auth';
+import { doc, setDoc, getDoc, updateDoc, increment, collection, getDocs, query, where } from 'firebase/firestore';
 
-export const AuthContext = createContext();
+const AuthContext = createContext();
 
-const AuthProvider = ({ children }) => {
+export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [allUsers, setAllUsers] = useState([]);
 
-  // ✅ Metrics initialize (refresh/browser clear হলে default set হবে)
-  const initMetrics = async () => {
-    const keys = ["newCustomers", "totalOrders", "monthlySales", "totalLogins"];
-    for (const key of keys) {
-      const existing = await metricsStore.getItem(key);
-      if (existing === null || existing === undefined) {
-        await metricsStore.setItem(key, 0);
+  // ✅ ইউজার ডেটা ফায়ারস্টোরে সেভ করুন
+  const saveUserToFirestore = async (uid, email, name, isAdmin = false) => {
+    try {
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        // ✅ নতুন ইউজার
+        await setDoc(userRef, {
+          uid,
+          email,
+          name: name || email?.split('@')[0] || 'User',
+          isAdmin: isAdmin,
+          createdAt: new Date(),
+          lastLogin: new Date(),
+          loginCount: 1,
+          isNewCustomer: true
+        });
+        
+        // ✅ Admin Stats-এ newCustomer যোগ করুন
+        const statsRef = doc(db, 'adminStats', 'stats');
+        const statsSnap = await getDoc(statsRef);
+        if (statsSnap.exists()) {
+          await updateDoc(statsRef, {
+            newCustomers: increment(1),
+            totalLogins: increment(1)
+          });
+        } else {
+          // ✅ Stats না থাকলে তৈরি করুন
+          await setDoc(statsRef, {
+            newCustomers: 1,
+            totalOrders: 0,
+            monthlySales: 0,
+            totalLogins: 1,
+            lastUpdated: new Date()
+          });
+        }
+      } else {
+        // ✅ পুরনো ইউজার → লগইন কাউন্ট বাড়ান
+        await updateDoc(userRef, {
+          lastLogin: new Date(),
+          loginCount: increment(1)
+        });
+        
+        // ✅ Admin Stats-এ totalLogins বাড়ান
+        const statsRef = doc(db, 'adminStats', 'stats');
+        const statsSnap = await getDoc(statsRef);
+        if (statsSnap.exists()) {
+          await updateDoc(statsRef, {
+            totalLogins: increment(1)
+          });
+        }
       }
+    } catch (error) {
+      console.error('Error saving user to Firestore:', error);
+    }
+  };
+
+  // ✅ Admin Stats তৈরি করুন (প্রথমবার)
+  const createAdminStats = async () => {
+    try {
+      const statsRef = doc(db, 'adminStats', 'stats');
+      const statsSnap = await getDoc(statsRef);
+      if (!statsSnap.exists()) {
+        await setDoc(statsRef, {
+          newCustomers: 0,
+          totalOrders: 0,
+          monthlySales: 0,
+          totalLogins: 0,
+          lastUpdated: new Date()
+        });
+        console.log('✅ Admin stats created');
+      }
+    } catch (error) {
+      console.error('Error creating admin stats:', error);
     }
   };
 
   useEffect(() => {
-    const loadUser = async () => {
-      await initMetrics(); // ✅ metrics always ready
-
-      const savedUser = await usersStore.getItem("currentUser");
-      if (savedUser) setUser(savedUser);
-
-      // 🔹 Ensure default admin exists
-      let adminExists = false;
-      await usersStore.iterate((value) => {
-        if (value.role === "admin") adminExists = true;
-      });
-      if (!adminExists) {
-        const adminUser = {
-          email: "admin@example.com",
-          password: "admin123",
-          role: "admin",
-          isAdmin: true
+    createAdminStats();
+    
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // ✅ Firebase ইউজার থেকে ডেটা নিন
+        const userData = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          isAdmin: firebaseUser.email === 'admin@example.com'
         };
-        await usersStore.setItem("admin", adminUser);
+        
+        // ✅ ফায়ারস্টোরে ইউজার সেভ করুন
+        await saveUserToFirestore(
+          firebaseUser.uid, 
+          firebaseUser.email, 
+          userData.name, 
+          userData.isAdmin
+        );
+        
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      } else {
+        setUser(null);
+        localStorage.removeItem('user');
       }
-    };
-    loadUser();
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  // ✅ Register function (ডুপ্লিকেট চেক সহ)
+  const register = async (name, email, password) => {
+    try {
+      // ✅ ইমেইল ইতিমধ্যে রেজিস্টার্ড কিনা চেক করুন
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', email));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        throw new Error('This email is already registered. Please login.');
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      await updateProfile(userCredential.user, {
+        displayName: name
+      });
+      
+      await saveUserToFirestore(userCredential.user.uid, email, name, false);
+      
+      return userCredential.user;
+    } catch (error) {
+      console.error('Registration error:', error);
+      throw error;
+    }
+  };
 
   // ✅ Login function
   const login = async (email, password) => {
-    const allUsers = [];
-    await usersStore.iterate((value) => {
-      allUsers.push(value);
-    });
-
-    const foundUser = allUsers.find(
-      (u) => u.email === email && u.password === password
-    );
-
-    if (foundUser) {
-      const loggedInUser = {
-        email: foundUser.email,
-        role: foundUser.role,
-        isAdmin: foundUser.role === "admin"
-      };
-      setUser(loggedInUser);
-      await usersStore.setItem("currentUser", loggedInUser);
-
-      // 🔹 Metrics update: total logins বাড়ানো
-      let totalLogins = parseInt(await metricsStore.getItem("totalLogins") || "0");
-      await metricsStore.setItem("totalLogins", totalLogins + 1);
-
-      return true;
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      return userCredential.user;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     }
-    return false;
   };
 
   // ✅ Logout function
   const logout = async () => {
-    setUser(null);
-    await usersStore.removeItem("currentUser");
+    try {
+      await signOut(auth);
+      setUser(null);
+      localStorage.removeItem('user');
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
   };
 
-  // ✅ Register function
-  const register = async (email, password, role = "customer") => {
-    const allUsers = [];
-    await usersStore.iterate((value) => {
-      allUsers.push(value);
-    });
+  // ✅ সব ইউজার লোড করুন (অ্যাডমিনের জন্য)
+  const loadAllUsers = async () => {
+    try {
+      const usersRef = collection(db, 'users');
+      const usersSnap = await getDocs(usersRef);
+      const usersList = usersSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAllUsers(usersList);
+      return usersList;
+    } catch (error) {
+      console.error('Error loading users:', error);
+      return [];
+    }
+  };
 
-    const exists = allUsers.find((u) => u.email === email);
-    if (exists) return false;
+  // ✅ Admin Stats লোড করুন
+  const loadAdminStats = async () => {
+    try {
+      const statsRef = doc(db, 'adminStats', 'stats');
+      const statsSnap = await getDoc(statsRef);
+      if (statsSnap.exists()) {
+        return statsSnap.data();
+      }
+      return { newCustomers: 0, totalOrders: 0, monthlySales: 0, totalLogins: 0 };
+    } catch (error) {
+      console.error('Error loading admin stats:', error);
+      return { newCustomers: 0, totalOrders: 0, monthlySales: 0, totalLogins: 0 };
+    }
+  };
 
-    const newUser = {
-      email,
-      password,
-      role,
-      isAdmin: role === "admin"
-    };
-    await usersStore.setItem(`user_${Date.now()}`, newUser);
-
-    // 🔹 Metrics update: নতুন customer হলে count বাড়ানো
-    let newCustomers = parseInt(await metricsStore.getItem("newCustomers") || "0");
-    await metricsStore.setItem("newCustomers", newCustomers + 1);
-
-    return true;
+  const value = {
+    user,
+    loading,
+    allUsers,
+    register,
+    login,
+    logout,
+    loadAllUsers,
+    loadAdminStats,
+    isAdmin: user?.isAdmin || false,
+    isAuthenticated: !!user
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, register }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
+}
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
 
-export default AuthProvider;
+export default AuthContext;
