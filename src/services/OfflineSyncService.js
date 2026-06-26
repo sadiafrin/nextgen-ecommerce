@@ -8,6 +8,7 @@ class OfflineSyncService {
     this.isOnline = navigator.onLine;
     this.syncInterval = null;
 
+    // ✅ Online/Offline ইভেন্ট
     window.addEventListener('online', () => {
       this.isOnline = true;
       this.syncPendingOrders();
@@ -17,6 +18,7 @@ class OfflineSyncService {
       this.isOnline = false;
     });
 
+    // ✅ প্রতি ৩০ সেকেন্ড পর সিঙ্ক
     this.syncInterval = setInterval(() => {
       if (this.isOnline) {
         this.syncPendingOrders();
@@ -24,6 +26,7 @@ class OfflineSyncService {
     }, 30000);
   }
 
+  // ✅ অর্ডার সেভ করুন
   async saveOrder(orderData) {
     console.log('💾 saveOrder called. Online:', this.isOnline);
     
@@ -46,8 +49,10 @@ class OfflineSyncService {
     }
   }
 
+  // ✅ অফলাইনে সেভ
   saveOrderOffline(orderData) {
     try {
+      console.log('📦 saveOrderOffline called');
       const pendingOrders = this.getPendingOrders();
       const newOrder = {
         id: `offline_${Date.now()}`,
@@ -59,6 +64,7 @@ class OfflineSyncService {
       pendingOrders.push(newOrder);
       localStorage.setItem(this.pendingKey, JSON.stringify(pendingOrders));
       console.log('📦 Order saved offline:', newOrder.id);
+      console.log('📋 Current pending orders:', pendingOrders);
       return { id: newOrder.id, status: 'pending' };
     } catch (error) {
       console.error('❌ Error saving order offline:', error);
@@ -66,16 +72,19 @@ class OfflineSyncService {
     }
   }
 
+  // ✅ পেন্ডিং অর্ডার লিস্ট
   getPendingOrders() {
     try {
       const data = localStorage.getItem(this.pendingKey);
-      return data ? JSON.parse(data) : [];
+      const orders = data ? JSON.parse(data) : [];
+      console.log('📋 getPendingOrders returned:', orders.length, 'orders');
+      return orders;
     } catch {
       return [];
     }
   }
 
-  // ✅ Sync করার পরেও pendingOrders রাখুন
+  // ✅ সব পেন্ডিং অর্ডার সিঙ্ক করুন
   async syncPendingOrders() {
     if (!this.isOnline) {
       console.log('⏳ Offline: Sync skipped');
@@ -94,30 +103,51 @@ class OfflineSyncService {
 
     for (const order of unsynced) {
       try {
-        await addDoc(collection(db, 'orders'), {
-          customerId: order.customerId,
-          customerEmail: order.customerEmail,
-          customerName: order.customerName,
-          items: order.items,
-          totalPrice: order.totalPrice,
+        // ✅ Order ডেটা সঠিক আছে কিনা চেক করুন
+        console.log('📦 Order data:', order);
+        
+        const docRef = await addDoc(collection(db, 'orders'), {
+          customerId: order.customerId || 'guest',
+          customerEmail: order.customerEmail || 'guest@example.com',
+          customerName: order.customerName || 'Guest',
+          items: order.items || [],
+          totalPrice: order.totalPrice || 0,
           status: 'confirmed',
           syncedAt: new Date().toISOString(),
           createdAt: new Date(order.createdAt || Date.now())
         });
 
-        console.log(`✅ Order ${order.id} synced (kept in pending list)`);
+        order.synced = true;
+        console.log(`✅ Order ${order.id} synced successfully! ID: ${docRef.id}`);
+
       } catch (error) {
         console.error(`❌ Failed to sync order ${order.id}:`, error);
+        console.error('Error details:', error.message);
       }
     }
 
-    console.log('📋 Pending orders kept in localStorage for admin view');
+    // ✅ সিঙ্ক করা অর্ডারগুলো আপডেট করুন
+    const updatedOrders = pendingOrders.filter(order => !order.synced);
+    localStorage.setItem(this.pendingKey, JSON.stringify(updatedOrders));
+    
+    console.log(`📋 Remaining pending orders: ${updatedOrders.length}`);
+
+    // ✅ Toast notification
+    const syncedCount = unsynced.length - updatedOrders.length;
+    if (window.showToast && syncedCount > 0) {
+      window.showToast(`✅ ${syncedCount} orders synced successfully!`, 'success');
+    }
+    if (window.showToast && updatedOrders.length > 0) {
+      window.showToast(`❌ ${updatedOrders.length} orders failed to sync`, 'error');
+    }
   }
 
+  // ✅ পেন্ডিং কাউন্ট
   getPendingCount() {
     return this.getPendingOrders().filter(order => !order.synced).length;
   }
 
+  // ✅ সিঙ্ক ইন্টারভাল ক্লিয়ার
   clearSyncInterval() {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
@@ -126,5 +156,6 @@ class OfflineSyncService {
   }
 }
 
+// ✅ Singleton
 const offlineSync = new OfflineSyncService();
 export default offlineSync;

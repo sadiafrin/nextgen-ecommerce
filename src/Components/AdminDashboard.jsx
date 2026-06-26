@@ -1,5 +1,5 @@
 // src/Components/AdminDashboard.jsx
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { db, storage } from "../firebase";
 import { 
@@ -41,68 +41,40 @@ export default function AdminDashboard() {
     description: ""
   });
 
-  // URL থেকে tab প্যারামিটার পড়ুন
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
-    if (tab) {
-      setActiveTab(tab);
-    }
+    if (tab) setActiveTab(tab);
   }, [location.search]);
 
-  // ✅ পেন্ডিং ইউজার লোড
   const loadPendingUsers = () => {
     try {
       const data = localStorage.getItem('pendingUsers');
-      const pending = data ? JSON.parse(data) : [];
-      setPendingUsers(pending);
-      return pending;
-    } catch {
-      setPendingUsers([]);
-      return [];
-    }
+      setPendingUsers(data ? JSON.parse(data) : []);
+    } catch { setPendingUsers([]); }
   };
 
-  // ✅ অফলাইন লগইন লোড
   const loadOfflineLogins = () => {
     try {
       const data = localStorage.getItem('offlineLogins');
-      const logins = data ? JSON.parse(data) : [];
-      setOfflineLogins(logins);
-      return logins;
-    } catch {
-      setOfflineLogins([]);
-      return [];
-    }
+      setOfflineLogins(data ? JSON.parse(data) : []);
+    } catch { setOfflineLogins([]); }
   };
 
-  // ✅ অফলাইন অর্ডার লোড
   const loadOfflineOrders = () => {
     try {
       const data = localStorage.getItem('pendingOrders');
-      const orders = data ? JSON.parse(data) : [];
-      setOfflineOrders(orders);
-      return orders;
-    } catch {
-      setOfflineOrders([]);
-      return [];
-    }
+      setOfflineOrders(data ? JSON.parse(data) : []);
+    } catch { setOfflineOrders([]); }
   };
 
-  // ✅ কন্টাক্ট মেসেজ লোড
   const loadContactMessages = () => {
     try {
       const data = localStorage.getItem('contactMessages');
-      const messages = data ? JSON.parse(data) : [];
-      setContactMessages(messages);
-      return messages;
-    } catch {
-      setContactMessages([]);
-      return [];
-    }
+      setContactMessages(data ? JSON.parse(data) : []);
+    } catch { setContactMessages([]); }
   };
 
-  // ✅ সব ডেটা লোড
   const loadData = async () => {
     setLoading(true);
     try {
@@ -129,7 +101,6 @@ export default function AdminDashboard() {
       loadOfflineLogins();
       loadOfflineOrders();
       loadContactMessages();
-
     } catch (error) {
       console.error("Error loading data:", error);
     }
@@ -145,8 +116,7 @@ export default function AdminDashboard() {
     try {
       const storageRef = ref(storage, `products/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      return url;
+      return await getDownloadURL(storageRef);
     } catch (error) {
       console.error("Error uploading image:", error);
       return null;
@@ -214,7 +184,6 @@ export default function AdminDashboard() {
         const imageRef = ref(storage, imageUrl);
         await deleteObject(imageRef).catch(() => {});
       }
-
       await deleteDoc(doc(db, "products", id));
       await loadData();
       alert("✅ Product deleted successfully!");
@@ -280,130 +249,129 @@ export default function AdminDashboard() {
     return <div className="p-6 text-red-500 font-bold">Access Denied! Admin only.</div>;
   }
 
-  // ✅ Offline Stats Cards - ফিক্সড (infinite loop সমাধান)
-  const OfflineStatsCards = () => {
-    const [counts, setCounts] = useState({ pending: 0, logins: 0, orders: 0 });
-    const intervalRef = useRef(null);
+  // const OfflineStatsCards = () => {
+  //   const [counts, setCounts] = useState({ pending: 0, logins: 0, orders: 0 });
 
-    const refreshCounts = useCallback(() => {
-      try {
-        const pending = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
-        const logins = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
-        const orders = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
-        
-        console.log('📊 Refreshing counts:', {
-          pending: pending.length,
-          logins: logins.length,
-          orders: orders.length
-        });
-        
-        setCounts({
-          pending: pending.length,
-          logins: logins.length,
-          orders: orders.length
-        });
-        
-        setPendingUsers(pending);
-        setOfflineLogins(logins);
-        setOfflineOrders(orders);
-      } catch (e) {
-        console.error('Error refreshing counts:', e);
-      }
-    }, []);
+  //   const refresh = () => {
+  //     try {
+  //       const pending = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
+  //       const logins = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
+  //       const orders = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+  //       setCounts({
+  //         pending: pending.length,
+  //         logins: logins.length,
+  //         orders: orders.length
+  //       });
+  //       setPendingUsers(pending);
+  //       setOfflineLogins(logins);
+  //       setOfflineOrders(orders);
+  //     } catch (e) {}
+  //   };
 
-    useEffect(() => {
-      refreshCounts();
-      intervalRef.current = setInterval(refreshCounts, 3000);
-      return () => {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-      };
-    }, [refreshCounts]);
+  //   useEffect(() => {
+  //     refresh();
+  //     const interval = setInterval(refresh, 5000);
+  //     return () => clearInterval(interval);
+  //   }, []);
 
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">📦</span>
-            <div>
-              <h3 className="font-semibold text-gray-700">Offline Registered</h3>
-              <p className="text-sm text-gray-500">Users who registered offline</p>
-            </div>
-            <span className={`ml-2 px-3 py-1 rounded-full text-sm font-bold ${counts.pending > 0 ? "bg-yellow-500 text-white" : "bg-green-100 text-green-700"}`}>
-              {counts.pending}
-            </span>
-          </div>
-          {counts.pending > 0 && (
-            <button
-              onClick={() => {
-                const data = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
-                const list = data.map((u, i) => 
-                  `${i+1}. ${u.name} (${u.email}) - ${u.createdAt ? new Date(u.createdAt).toLocaleString() : 'N/A'}`
-                ).join('\n');
-                alert(`📦 Offline Registered Users (${data.length}):\n\n${list}`);
-              }}
-              className="mt-2 text-sm text-yellow-600 hover:text-yellow-800 font-medium"
-            >
-              👁️ View List
-            </button>
-          )}
-        </div>
+  //   return (
+  //     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+  //       <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+  //         <div className="flex items-center gap-3">
+  //           <span className="text-2xl">📦</span>
+  //           <div>
+  //             <h3 className="font-semibold text-gray-700">Offline Registered</h3>
+  //             <p className="text-sm text-gray-500">Users who registered offline</p>
+  //           </div>
+  //           <span className={`ml-2 px-3 py-1 rounded-full text-sm font-bold ${counts.pending > 0 ? "bg-yellow-500 text-white" : "bg-green-100 text-green-700"}`}>
+  //             {counts.pending}
+  //           </span>
+  //         </div>
+  //       </div>
+  //       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+  //         <div className="flex items-center gap-3">
+  //           <span className="text-2xl">📱</span>
+  //           <div>
+  //             <h3 className="font-semibold text-gray-700">Offline Logins</h3>
+  //             <p className="text-sm text-gray-500">Users who logged in offline</p>
+  //           </div>
+  //           <span className="ml-2 px-3 py-1 rounded-full text-sm font-bold bg-blue-500 text-white">{counts.logins}</span>
+  //         </div>
+  //       </div>
+  //       <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+  //         <div className="flex items-center gap-3">
+  //           <span className="text-2xl">📋</span>
+  //           <div>
+  //             <h3 className="font-semibold text-gray-700">Offline Orders</h3>
+  //             <p className="text-sm text-gray-500">Orders placed offline</p>
+  //           </div>
+  //           <span className="ml-2 px-3 py-1 rounded-full text-sm font-bold bg-purple-500 text-white">{counts.orders}</span>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // };
 
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">📱</span>
-            <div>
-              <h3 className="font-semibold text-gray-700">Offline Logins</h3>
-              <p className="text-sm text-gray-500">Users who logged in offline</p>
-            </div>
-            <span className="ml-2 px-3 py-1 rounded-full text-sm font-bold bg-blue-500 text-white">{counts.logins}</span>
-          </div>
-          {counts.logins > 0 && (
-            <button
-              onClick={() => {
-                const data = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
-                const list = data.map((u, i) => 
-                  `${i+1}. ${u.name} (${u.email}) - ${u.count}x, Last: ${new Date(u.lastLogin).toLocaleString()}`
-                ).join('\n');
-                alert(`📱 Offline Login Users (${data.length}):\n\n${list}`);
-              }}
-              className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
-            >
-              👁️ View Details
-            </button>
-          )}
-        </div>
+  // ✅ Offline Stats Cards (সরাসরি localStorage থেকে কাউন্ট)
+const OfflineStatsCards = () => {
+  const [pending, setPending] = useState(0);
+  const [logins, setLogins] = useState(0);
+  const [orders, setOrders] = useState(0);
 
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">📋</span>
-            <div>
-              <h3 className="font-semibold text-gray-700">Offline Orders</h3>
-              <p className="text-sm text-gray-500">Orders placed offline</p>
-            </div>
-            <span className="ml-2 px-3 py-1 rounded-full text-sm font-bold bg-purple-500 text-white">{counts.orders}</span>
-          </div>
-          {counts.orders > 0 && (
-            <button
-              onClick={() => {
-                const data = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
-                const list = data.map((u, i) => 
-                  `${i+1}. ${u.id?.slice(0, 8) || 'N/A'} - ${u.customerName || 'Guest'} - ৳${u.totalPrice || 0}`
-                ).join('\n');
-                alert(`📋 Offline Orders (${data.length}):\n\n${list}`);
-              }}
-              className="mt-2 text-sm text-purple-600 hover:text-purple-800 font-medium"
-            >
-              👁️ View Orders
-            </button>
-          )}
-        </div>
-      </div>
-    );
+  const refresh = () => {
+    try {
+      const p = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
+      const l = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
+      const o = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+      setPending(p.length);
+      setLogins(l.length);
+      setOrders(o.length);
+    } catch (e) {}
   };
 
+  useEffect(() => {
+    refresh();
+    const interval = setInterval(refresh, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📦</span>
+          <div>
+            <h3 className="font-semibold text-gray-700">Offline Registered</h3>
+            <p className="text-sm text-gray-500">Users who registered offline</p>
+          </div>
+          <span className={`ml-2 px-3 py-1 rounded-full text-sm font-bold ${pending > 0 ? "bg-yellow-500 text-white" : "bg-green-100 text-green-700"}`}>
+            {pending}
+          </span>
+        </div>
+      </div>
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📱</span>
+          <div>
+            <h3 className="font-semibold text-gray-700">Offline Logins</h3>
+            <p className="text-sm text-gray-500">Users who logged in offline</p>
+          </div>
+          <span className="ml-2 px-3 py-1 rounded-full text-sm font-bold bg-blue-500 text-white">{logins}</span>
+        </div>
+      </div>
+      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📋</span>
+          <div>
+            <h3 className="font-semibold text-gray-700">Offline Orders</h3>
+            <p className="text-sm text-gray-500">Orders placed offline</p>
+          </div>
+          <span className="ml-2 px-3 py-1 rounded-full text-sm font-bold bg-purple-500 text-white">{orders}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
   const StatsCards = () => (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
@@ -451,14 +419,11 @@ export default function AdminDashboard() {
           <button onClick={() => setActiveTab("messages")} className={`px-6 py-2 rounded-lg font-medium transition ${activeTab === "messages" ? "bg-blue-600 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📩 Messages</button>
         </div>
 
-        {/* ✅ Offline Users Tab */}
         {activeTab === "offline-users" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-bold">📦 Offline Registered Users ({pendingUsers.length})</h2>
-              <button onClick={() => { loadPendingUsers(); }} className="text-sm text-blue-600 hover:text-blue-700">
-                🔄 Refresh
-              </button>
+              <button onClick={loadPendingUsers} className="text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {pendingUsers.length === 0 ? (
               <div className="p-6 text-center text-gray-500">✅ No offline registered users.</div>
@@ -466,28 +431,16 @@ export default function AdminDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-4 py-3 text-left">#</th>
-                      <th className="px-4 py-3 text-left">Name</th>
-                      <th className="px-4 py-3 text-left">Email</th>
-                      <th className="px-4 py-3 text-left">Registered At</th>
-                      <th className="px-4 py-3 text-left">Status</th>
-                    </tr>
+                    <tr><th className="px-4 py-3 text-left">#</th><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-left">Registered At</th><th className="px-4 py-3 text-left">Status</th></tr>
                   </thead>
                   <tbody>
                     {pendingUsers.map((user, i) => (
                       <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-4 py-3">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium">{user.name || "N/A"}</td>
-                        <td className="px-4 py-3">{user.email || "N/A"}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {user.createdAt ? new Date(user.createdAt).toLocaleString() : "N/A"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
-                            ⏳ Pending
-                          </span>
-                        </td>
+                        <td className="px-4 py-3">{i+1}</td>
+                        <td className="px-4 py-3 font-medium">{user.name}</td>
+                        <td className="px-4 py-3">{user.email}</td>
+                        <td className="px-4 py-3 text-sm">{user.createdAt ? new Date(user.createdAt).toLocaleString() : "N/A"}</td>
+                        <td className="px-4 py-3"><span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">⏳ Pending</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -497,14 +450,11 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ✅ Offline Logins Tab */}
         {activeTab === "offline-logins" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-bold">📱 Offline Logins ({offlineLogins.length})</h2>
-              <button onClick={() => { loadOfflineLogins(); }} className="text-sm text-blue-600 hover:text-blue-700">
-                🔄 Refresh
-              </button>
+              <button onClick={loadOfflineLogins} className="text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {offlineLogins.length === 0 ? (
               <div className="p-6 text-center text-gray-500">✅ No offline logins recorded.</div>
@@ -512,32 +462,17 @@ export default function AdminDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-4 py-3 text-left">#</th>
-                      <th className="px-4 py-3 text-left">Name</th>
-                      <th className="px-4 py-3 text-left">Email</th>
-                      <th className="px-4 py-3 text-left">First Login</th>
-                      <th className="px-4 py-3 text-left">Last Login</th>
-                      <th className="px-4 py-3 text-left">Count</th>
-                    </tr>
+                    <tr><th className="px-4 py-3 text-left">#</th><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-left">First Login</th><th className="px-4 py-3 text-left">Last Login</th><th className="px-4 py-3 text-left">Count</th></tr>
                   </thead>
                   <tbody>
                     {offlineLogins.map((login, i) => (
                       <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-4 py-3">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium">{login.name || "N/A"}</td>
-                        <td className="px-4 py-3">{login.email || "N/A"}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {login.firstLogin ? new Date(login.firstLogin).toLocaleString() : "N/A"}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          {login.lastLogin ? new Date(login.lastLogin).toLocaleString() : "N/A"}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">
-                            {login.count || 0}
-                          </span>
-                        </td>
+                        <td className="px-4 py-3">{i+1}</td>
+                        <td className="px-4 py-3 font-medium">{login.name}</td>
+                        <td className="px-4 py-3">{login.email}</td>
+                        <td className="px-4 py-3 text-sm">{login.firstLogin ? new Date(login.firstLogin).toLocaleString() : "N/A"}</td>
+                        <td className="px-4 py-3 text-sm">{login.lastLogin ? new Date(login.lastLogin).toLocaleString() : "N/A"}</td>
+                        <td className="px-4 py-3 text-center"><span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">{login.count}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -547,14 +482,11 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ✅ Offline Orders Tab */}
         {activeTab === "offline-orders" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-bold">📋 Offline Orders ({offlineOrders.length})</h2>
-              <button onClick={() => { loadOfflineOrders(); }} className="text-sm text-blue-600 hover:text-blue-700">
-                🔄 Refresh
-              </button>
+              <button onClick={loadOfflineOrders} className="text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {offlineOrders.length === 0 ? (
               <div className="p-6 text-center text-gray-500">✅ No offline orders found.</div>
@@ -562,32 +494,18 @@ export default function AdminDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-4 py-3 text-left">#</th>
-                      <th className="px-4 py-3 text-left">Order ID</th>
-                      <th className="px-4 py-3 text-left">Customer</th>
-                      <th className="px-4 py-3 text-left">Items</th>
-                      <th className="px-4 py-3 text-left">Total</th>
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Status</th>
-                    </tr>
+                    <tr><th className="px-4 py-3 text-left">#</th><th className="px-4 py-3 text-left">Order ID</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Items</th><th className="px-4 py-3 text-left">Total</th><th className="px-4 py-3 text-left">Date</th><th className="px-4 py-3 text-left">Status</th></tr>
                   </thead>
                   <tbody>
                     {offlineOrders.map((order, i) => (
                       <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-4 py-3">{i + 1}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{order.id?.slice(0, 8) || "N/A"}</td>
+                        <td className="px-4 py-3">{i+1}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{order.id?.slice(0,8)}</td>
                         <td className="px-4 py-3">{order.customerName || order.customerEmail || "Guest"}</td>
                         <td className="px-4 py-3">{order.items?.length || 0}</td>
                         <td className="px-4 py-3 font-medium">৳{order.totalPrice || 0}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {order.createdAt ? new Date(order.createdAt).toLocaleString() : "N/A"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
-                            ⏳ Pending
-                          </span>
-                        </td>
+                        <td className="px-4 py-3 text-sm">{order.createdAt ? new Date(order.createdAt).toLocaleString() : "N/A"}</td>
+                        <td className="px-4 py-3"><span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">⏳ Pending</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -597,14 +515,11 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ✅ Messages Tab */}
         {activeTab === "messages" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-bold">📩 Contact Messages ({contactMessages.length})</h2>
-              <button onClick={() => { loadContactMessages(); }} className="text-sm text-blue-600 hover:text-blue-700">
-                🔄 Refresh
-              </button>
+              <button onClick={loadContactMessages} className="text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {contactMessages.length === 0 ? (
               <div className="p-6 text-center text-gray-500">✅ No messages yet.</div>
@@ -612,24 +527,16 @@ export default function AdminDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-4 py-3 text-left">#</th>
-                      <th className="px-4 py-3 text-left">Name</th>
-                      <th className="px-4 py-3 text-left">Email</th>
-                      <th className="px-4 py-3 text-left">Message</th>
-                      <th className="px-4 py-3 text-left">Date</th>
-                    </tr>
+                    <tr><th className="px-4 py-3 text-left">#</th><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-left">Message</th><th className="px-4 py-3 text-left">Date</th></tr>
                   </thead>
                   <tbody>
                     {contactMessages.map((msg, i) => (
                       <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-4 py-3">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium">{msg.name || "N/A"}</td>
-                        <td className="px-4 py-3">{msg.email || "N/A"}</td>
-                        <td className="px-4 py-3 max-w-xs truncate">{msg.message || "N/A"}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {msg.createdAt ? new Date(msg.createdAt).toLocaleString() : "N/A"}
-                        </td>
+                        <td className="px-4 py-3">{i+1}</td>
+                        <td className="px-4 py-3 font-medium">{msg.name}</td>
+                        <td className="px-4 py-3">{msg.email}</td>
+                        <td className="px-4 py-3 max-w-xs truncate">{msg.message}</td>
+                        <td className="px-4 py-3 text-sm">{new Date(msg.createdAt).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -639,7 +546,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* অন্যান্য ট্যাব (Products, Orders, Users) */}
         {activeTab === "products" && (
           <>
             <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
@@ -713,7 +619,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {orders.map((order) => (
                       <tr key={order.id} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-4 py-3 font-mono text-xs">{order.id?.slice(0, 8) || "N/A"}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{order.id?.slice(0,8)}</td>
                         <td className="px-4 py-3">{order.customerEmail || "Guest"}</td>
                         <td className="px-4 py-3">{order.items?.length || 0}</td>
                         <td className="px-4 py-3 font-medium">৳{order.totalPrice || 0}</td>
@@ -748,7 +654,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {users.map((user) => (
                       <tr key={user.id} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-4 py-3 font-mono text-xs">{user.uid?.slice(0, 8) || "N/A"}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{user.uid?.slice(0,8)}</td>
                         <td className="px-4 py-3">{user.name || "N/A"}</td>
                         <td className="px-4 py-3">{user.email || "N/A"}</td>
                         <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs ${user.isAdmin ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-700"}`}>{user.isAdmin ? "Admin" : "User"}</span></td>

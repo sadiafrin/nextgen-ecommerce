@@ -1,5 +1,6 @@
 // src/Components/productCard.jsx
 import { useState, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { CartContext } from '../context/CartContext';
 
 export default function ProductCard({ product }) {
@@ -69,9 +70,12 @@ export default function ProductCard({ product }) {
         <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity duration-300 ${
           isHovered ? 'opacity-100' : 'opacity-0'
         }`}>
-          <button className="bg-white text-gray-800 px-3 sm:px-6 py-1.5 sm:py-2.5 rounded-lg font-semibold hover:bg-gray-100 transition transform hover:scale-105 shadow-lg text-xs sm:text-sm">
+          <Link
+            to={`/product/${product.id}`}
+            className="bg-white text-gray-800 px-3 sm:px-6 py-1.5 sm:py-2.5 rounded-lg font-semibold hover:bg-gray-100 transition transform hover:scale-105 shadow-lg text-xs sm:text-sm"
+          >
             Quick View
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -80,9 +84,13 @@ export default function ProductCard({ product }) {
         <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider">
           {product.category || 'General'}
         </span>
-        <h3 className="font-semibold text-gray-800 text-xs sm:text-sm md:text-base hover:text-blue-600 transition line-clamp-1">
-          {product.name}
-        </h3>
+
+        {/* ✅ প্রোডাক্ট নামের সাথে লিংক যোগ করা হয়েছে */}
+        <Link to={`/product/${product.id}`}>
+          <h3 className="font-semibold text-gray-800 text-xs sm:text-sm md:text-base hover:text-blue-600 transition line-clamp-1">
+            {product.name}
+          </h3>
+        </Link>
 
         {product.rating && (
           <div className="flex items-center gap-1 sm:gap-2 mt-0.5 sm:mt-1">
@@ -122,7 +130,7 @@ export default function ProductCard({ product }) {
               Added
             </span>
           ) : product.stock === 'In Stock' ? (
-            '🛒 Add'
+            '🛒 Add to Cart'
           ) : (
             'Out of Stock'
           )}

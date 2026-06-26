@@ -29,12 +29,6 @@ export default defineConfig({
           }
         ]
       },
-      // ✅ Dev-এও PWA চালু করুন
-      devOptions: {
-        enabled: true,
-        type: 'module',
-        navigateFallback: 'index.html'
-      },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,json}'],
         navigateFallback: 'index.html',
@@ -47,6 +41,31 @@ export default defineConfig({
               expiration: {
                 maxEntries: 200,
                 maxAgeSeconds: 60 * 60 * 24 * 30
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.match(/\.(jpg|jpeg|png|svg|webp)$/i),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-images',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 7
+              }
+            }
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.endsWith('.json'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'json-data',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 7
               }
             }
           }
@@ -54,4 +73,10 @@ export default defineConfig({
       }
     })
   ],
+  server: {
+    port: 5173,
+  },
+  preview: {
+    port: 4173,
+  },
 });
