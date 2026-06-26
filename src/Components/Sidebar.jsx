@@ -1,25 +1,56 @@
 // src/Components/Sidebar.jsx
 import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isAdmin, logout } = useAuth();
   const { totalItems } = useCart();
+  const [showOfflineMenu, setShowOfflineMenu] = useState(false);
+  const [offlineCounts, setOfflineCounts] = useState({ 
+    pendingUsers: 0, 
+    offlineLogins: 0, 
+    pendingOrders: 0,
+    total: 0 
+  });
+
+  // ✅ Offline Data কাউন্ট
+  const getOfflineCounts = () => {
+    try {
+      const pendingUsers = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
+      const offlineLogins = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
+      const pendingOrders = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+      return {
+        pendingUsers: pendingUsers.length,
+        offlineLogins: offlineLogins.length,
+        pendingOrders: pendingOrders.length,
+        total: pendingUsers.length + offlineLogins.length + pendingOrders.length
+      };
+    } catch {
+      return { pendingUsers: 0, offlineLogins: 0, pendingOrders: 0, total: 0 };
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      setOfflineCounts(getOfflineCounts());
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
     <>
-      {/* ✅ Overlay */}
+      {/* Overlay */}
       <div 
         className="fixed inset-0 bg-black/50 z-40"
         onClick={onClose}
       />
 
-      {/* ✅ Sidebar */}
-      <div className="fixed top-0 left-0 h-full w-72 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out">
-        {/* ✅ Header - QuickBuy Logo */}
+      {/* Sidebar */}
+      <div className="fixed top-0 left-0 h-full w-72 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto">
+        {/* Header */}
         <div className="p-4 border-b flex justify-between items-center">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-md">
@@ -39,7 +70,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* ✅ User Info */}
+        {/* User Info */}
         <div className="p-4 border-b bg-gray-50">
           {user ? (
             <div>
@@ -65,8 +96,9 @@ export default function Sidebar({ isOpen, onClose }) {
           )}
         </div>
 
-        {/* ✅ Navigation Links */}
+        {/* Navigation Links */}
         <nav className="p-4 space-y-1">
+          {/* Home */}
           <Link 
             to="/" 
             onClick={onClose}
@@ -78,6 +110,7 @@ export default function Sidebar({ isOpen, onClose }) {
             Home
           </Link>
 
+          {/* Cart */}
           <Link 
             to="/cart" 
             onClick={onClose}
@@ -96,6 +129,7 @@ export default function Sidebar({ isOpen, onClose }) {
             )}
           </Link>
 
+          {/* Orders */}
           <Link 
             to="/orders" 
             onClick={onClose}
@@ -107,6 +141,7 @@ export default function Sidebar({ isOpen, onClose }) {
             My Orders
           </Link>
 
+          {/* Admin Dashboard */}
           {isAdmin && (
             <Link 
               to="/admin" 
@@ -120,6 +155,78 @@ export default function Sidebar({ isOpen, onClose }) {
             </Link>
           )}
 
+          {/* ✅ Offline Data Dropdown (শুধু অ্যাডমিন) */}
+          {isAdmin && (
+            <div>
+              <button
+                onClick={() => setShowOfflineMenu(!showOfflineMenu)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 transition text-gray-700"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="text-xl">📡</span>
+                  Offline Data
+                  {offlineCounts.total > 0 && (
+                    <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
+                      {offlineCounts.total}
+                    </span>
+                  )}
+                </span>
+                <svg className={`w-4 h-4 transition-transform ${showOfflineMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* ✅ Offline Sub-menu */}
+              {showOfflineMenu && (
+                <div className="ml-6 space-y-1 border-l-2 border-gray-200 pl-3">
+                  <Link
+                    to="/admin?tab=offline-users"
+                    onClick={onClose}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 transition text-sm text-gray-600"
+                  >
+                    <span>📦 Offline Registered</span>
+                    <span className={`text-xs font-bold ${offlineCounts.pendingUsers > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {offlineCounts.pendingUsers}
+                    </span>
+                  </Link>
+
+                  <Link
+                    to="/admin?tab=offline-logins"
+                    onClick={onClose}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 transition text-sm text-gray-600"
+                  >
+                    <span>📱 Offline Logins</span>
+                    <span className={`text-xs font-bold ${offlineCounts.offlineLogins > 0 ? 'text-blue-600' : 'text-green-600'}`}>
+                      {offlineCounts.offlineLogins}
+                    </span>
+                  </Link>
+
+                  <Link
+                    to="/admin?tab=offline-orders"
+                    onClick={onClose}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 transition text-sm text-gray-600"
+                  >
+                    <span>📋 Offline Orders</span>
+                    <span className={`text-xs font-bold ${offlineCounts.pendingOrders > 0 ? 'text-purple-600' : 'text-green-600'}`}>
+                      {offlineCounts.pendingOrders}
+                    </span>
+                  </Link>
+
+                  {/* Sync All Button */}
+                  <button
+                    onClick={() => {
+                      alert('🔄 Syncing all offline data...');
+                    }}
+                    className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium py-2 mt-1 border-t border-gray-100 pt-2"
+                  >
+                    🔄 Sync All
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Contact */}
           <Link 
             to="/contact" 
             onClick={onClose}
@@ -132,7 +239,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </Link>
         </nav>
 
-        {/* ✅ Footer (Logout) */}
+        {/* Footer (Logout) */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-gray-50">
           {user ? (
             <button

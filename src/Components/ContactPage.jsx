@@ -1,19 +1,93 @@
 // src/Components/ContactPage.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 export default function ContactPage() {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    message: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState(null); // 'success' or 'error'
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitStatus(null);
+
+    // ✅ ফর্ম ভ্যালিডেশন
+    if (!formData.name || !formData.email || !formData.message) {
+      setSubmitStatus('error');
+      alert('❌ Please fill in all fields');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      // ✅ ১. localStorage-এ মেসেজ সেভ করুন
+      const messages = JSON.parse(localStorage.getItem('contactMessages') || '[]');
+      const newMessage = {
+        id: Date.now(),
+        ...formData,
+        createdAt: new Date().toISOString(),
+        status: 'pending'
+      };
+      messages.push(newMessage);
+      localStorage.setItem('contactMessages', JSON.stringify(messages));
+      console.log('📩 Message saved:', newMessage);
+
+      // ✅ ২. EmailJS দিয়ে ইমেইল পাঠান (ঐচ্ছিক)
+      // EmailJS সেটআপ না থাকলে কমেন্ট করুন
+      /*
+      const emailParams = {
+        from_name: formData.name,
+        from_email: formData.email,
+        message: formData.message,
+        to_email: 'support@quickbuy.com'
+      };
+      await emailjs.send('YOUR_SERVICE_ID', 'YOUR_TEMPLATE_ID', emailParams, 'YOUR_PUBLIC_KEY');
+      */
+
+      // ✅ ৩. সাফল্য মেসেজ
+      setSubmitStatus('success');
+      setFormData({ name: '', email: '', message: '' });
+      
+      // ✅ Toast নোটিফিকেশন
+      if (window.showToast) {
+        window.showToast('✅ Message sent successfully!', 'success');
+      } else {
+        alert('✅ Message sent successfully!');
+      }
+
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
+      setSubmitStatus('error');
+      if (window.showToast) {
+        window.showToast('❌ Failed to send message. Please try again.', 'error');
+      } else {
+        alert('❌ Failed to send message. Please try again.');
+      }
+    }
+
+    setIsSubmitting(false);
+  };
+
   return (
     <div className="min-h-[70vh] bg-gray-50 py-12 px-4">
       <div className="max-w-4xl mx-auto">
-        {/* ✅ Header */}
+        {/* Header */}
         <div className="text-center mb-10">
           <h1 className="text-3xl md:text-4xl font-bold text-gray-800">📧 Contact Us</h1>
           <p className="text-gray-500 mt-2">We'd love to hear from you</p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
-          {/* ✅ Contact Info */}
+          {/* Contact Info */}
           <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
             <h2 className="text-xl font-bold text-gray-800">Get in Touch</h2>
             
@@ -60,16 +134,29 @@ export default function ContactPage() {
                 </div>
               </div>
             </div>
+
+            {/* ✅ Admin: View Messages */}
+            <div className="mt-4 pt-4 border-t">
+              <Link
+                to="/admin?tab=messages"
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              >
+                📩 View All Messages (Admin)
+              </Link>
+            </div>
           </div>
 
-          {/* ✅ Contact Form */}
+          {/* Contact Form */}
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Send a Message</h2>
-            <form className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
                 <input
                   type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
                   placeholder="John Doe"
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -79,6 +166,9 @@ export default function ContactPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
                 <input
                   type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
                   placeholder="john@example.com"
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -87,6 +177,9 @@ export default function ContactPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
                 <textarea
+                  name="message"
+                  value={formData.message}
+                  onChange={handleChange}
                   rows="4"
                   placeholder="Write your message here..."
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -95,15 +188,41 @@ export default function ContactPage() {
               </div>
               <button
                 type="submit"
-                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium"
+                disabled={isSubmitting}
+                className={`w-full py-2 rounded-lg font-medium transition ${
+                  isSubmitting
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow'
+                }`}
               >
-                Send Message
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Sending...
+                  </span>
+                ) : (
+                  'Send Message'
+                )}
               </button>
+              
+              {submitStatus === 'success' && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-green-600 text-sm">✅ Message sent successfully!</p>
+                </div>
+              )}
+              {submitStatus === 'error' && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-600 text-sm">❌ Failed to send. Please try again.</p>
+                </div>
+              )}
             </form>
           </div>
         </div>
 
-        {/* ✅ Back to Home */}
+        {/* Back to Home */}
         <div className="text-center mt-8">
           <Link to="/" className="text-blue-600 hover:text-blue-700 font-medium">
             ← Back to Home

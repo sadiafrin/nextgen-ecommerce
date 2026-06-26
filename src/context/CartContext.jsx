@@ -1,7 +1,7 @@
 // src/context/CartContext.jsx
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
-// ✅ Context তৈরি করুন
+// ✅ Context তৈরি করুন (এখানে CartContext export করা হয়েছে)
 const CartContext = createContext();
 
 // ✅ Cart Provider কম্পোনেন্ট
@@ -126,7 +126,7 @@ export function CartProvider({ children }) {
   );
 }
 
-// ✅ Custom Hook - useCart
+// ✅ ১৩. Custom Hook - useCart
 export const useCart = () => {
   const context = useContext(CartContext);
   if (!context) {
@@ -135,8 +135,8 @@ export const useCart = () => {
   return context;
 };
 
-// ✅ CartContext export (সঠিকভাবে)
+// ✅ ১৪. CartContext export (এখানে সঠিকভাবে export করা হয়েছে)
 export { CartContext };
 
-// ✅ Default Export
+// ✅ ১৫. Default Export
 export default CartContext;

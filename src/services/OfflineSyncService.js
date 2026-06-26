@@ -1,6 +1,6 @@
 // src/services/OfflineSyncService.js
 import { db } from '../firebase';
-import { collection, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore';
 
 class OfflineSyncService {
   constructor() {
@@ -8,7 +8,6 @@ class OfflineSyncService {
     this.isOnline = navigator.onLine;
     this.syncInterval = null;
 
-    // ✅ Online/Offline ইভেন্ট লিসেনার
     window.addEventListener('online', () => {
       this.isOnline = true;
       this.syncPendingOrders();
@@ -18,7 +17,6 @@ class OfflineSyncService {
       this.isOnline = false;
     });
 
-    // ✅ প্রতি ৩০ সেকেন্ড পর পর সিঙ্ক চেক
     this.syncInterval = setInterval(() => {
       if (this.isOnline) {
         this.syncPendingOrders();
@@ -26,45 +24,48 @@ class OfflineSyncService {
     }, 30000);
   }
 
-  // ✅ অর্ডার সেভ করুন (অফলাইন সাপোর্ট সহ)
   async saveOrder(orderData) {
+    console.log('💾 saveOrder called. Online:', this.isOnline);
+    
     if (this.isOnline) {
-      // ✅ অনলাইন → সরাসরি Firebase-এ সেভ
       try {
         const docRef = await addDoc(collection(db, 'orders'), {
           ...orderData,
           status: 'confirmed',
-          syncedAt: new Date().toISOString()
+          syncedAt: new Date().toISOString(),
+          createdAt: new Date()
         });
+        console.log('✅ Order saved online:', docRef.id);
         return { id: docRef.id, status: 'confirmed' };
       } catch (error) {
-        console.error('Error saving order online:', error);
-        // ❌ অনলাইনে ফেইল হলে অফলাইনে সেভ
+        console.error('❌ Error saving order online:', error);
         return this.saveOrderOffline(orderData);
       }
     } else {
-      // ❌ অফলাইন → localStorage-এ সেভ
       return this.saveOrderOffline(orderData);
     }
   }
 
-  // ✅ অর্ডার অফলাইনে সেভ করুন
   saveOrderOffline(orderData) {
-    const pendingOrders = this.getPendingOrders();
-    const newOrder = {
-      id: `offline_${Date.now()}`,
-      ...orderData,
-      status: 'pending',
-      synced: false,
-      createdAt: new Date().toISOString()
-    };
-    pendingOrders.push(newOrder);
-    localStorage.setItem(this.pendingKey, JSON.stringify(pendingOrders));
-    console.log('📦 Order saved offline:', newOrder.id);
-    return { id: newOrder.id, status: 'pending' };
+    try {
+      const pendingOrders = this.getPendingOrders();
+      const newOrder = {
+        id: `offline_${Date.now()}`,
+        ...orderData,
+        status: 'pending',
+        synced: false,
+        createdAt: new Date().toISOString()
+      };
+      pendingOrders.push(newOrder);
+      localStorage.setItem(this.pendingKey, JSON.stringify(pendingOrders));
+      console.log('📦 Order saved offline:', newOrder.id);
+      return { id: newOrder.id, status: 'pending' };
+    } catch (error) {
+      console.error('❌ Error saving order offline:', error);
+      return { id: `offline_${Date.now()}`, status: 'pending' };
+    }
   }
 
-  // ✅ পেন্ডিং অর্ডার লিস্ট নিন
   getPendingOrders() {
     try {
       const data = localStorage.getItem(this.pendingKey);
@@ -74,7 +75,7 @@ class OfflineSyncService {
     }
   }
 
-  // ✅ সব পেন্ডিং অর্ডার Firebase-এ সিঙ্ক করুন
+  // ✅ Sync করার পরেও pendingOrders রাখুন
   async syncPendingOrders() {
     if (!this.isOnline) {
       console.log('⏳ Offline: Sync skipped');
@@ -93,8 +94,7 @@ class OfflineSyncService {
 
     for (const order of unsynced) {
       try {
-        // ✅ Firebase-এ অর্ডার সেভ করুন
-        const docRef = await addDoc(collection(db, 'orders'), {
+        await addDoc(collection(db, 'orders'), {
           customerId: order.customerId,
           customerEmail: order.customerEmail,
           customerName: order.customerName,
@@ -102,37 +102,22 @@ class OfflineSyncService {
           totalPrice: order.totalPrice,
           status: 'confirmed',
           syncedAt: new Date().toISOString(),
-          createdAt: order.createdAt || new Date().toISOString()
+          createdAt: new Date(order.createdAt || Date.now())
         });
 
-        // ✅ অর্ডার সফলভাবে সিঙ্ক হয়েছে
-        order.synced = true;
-        order.firebaseId = docRef.id;
-        order.status = 'synced';
-
-        console.log(`✅ Order ${order.id} synced to Firebase: ${docRef.id}`);
+        console.log(`✅ Order ${order.id} synced (kept in pending list)`);
       } catch (error) {
         console.error(`❌ Failed to sync order ${order.id}:`, error);
       }
     }
 
-    // ✅ সিঙ্ককৃত অর্ডারগুলো localStorage-এ আপডেট করুন
-    const updatedOrders = pendingOrders.filter(order => !order.synced);
-    localStorage.setItem(this.pendingKey, JSON.stringify(updatedOrders));
-
-    // ✅ যদি সব অর্ডার সিঙ্ক হয়ে যায়, localStorage ক্লিয়ার করুন
-    if (updatedOrders.length === 0) {
-      localStorage.removeItem(this.pendingKey);
-      console.log('🎉 All orders synced!');
-    }
+    console.log('📋 Pending orders kept in localStorage for admin view');
   }
 
-  // ✅ পেন্ডিং অর্ডার কাউন্ট
   getPendingCount() {
     return this.getPendingOrders().filter(order => !order.synced).length;
   }
 
-  // ✅ সিঙ্ক ইন্টারভাল ক্লিয়ার করুন (কম্পোনেন্ট আনমাউন্টে)
   clearSyncInterval() {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
@@ -141,6 +126,5 @@ class OfflineSyncService {
   }
 }
 
-// ✅ Singleton Instance
 const offlineSync = new OfflineSyncService();
 export default offlineSync;

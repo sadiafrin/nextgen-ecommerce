@@ -1,22 +1,22 @@
 // src/context/LoginPage.jsx
 import React, { useState } from 'react';
-import { useAuth } from './AuthContext';  // ✅ useAuth ব্যবহার করুন
+import { useAuth } from './AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 
 export default function LoginPage() {
-  const { login, loading, error } = useAuth();  // ✅ useAuth ব্যবহার করুন
+  const { login, loading } = useAuth();
   const navigate = useNavigate();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [localError, setLocalError] = useState('');
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLocalError('');
+    setError('');
     
     if (!email || !password) {
-      setLocalError('Please fill in all fields');
+      setError('Please fill in all fields');
       return;
     }
     
@@ -24,7 +24,7 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/');
     } catch (err) {
-      setLocalError(err.message || 'Login failed. Please try again.');
+      setError(err.message || 'Login failed. Please try again.');
     }
   };
 
@@ -54,9 +54,9 @@ export default function LoginPage() {
             required
           />
           
-          {(localError || error) && (
+          {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-600 text-sm">{localError || error}</p>
+              <p className="text-red-600 text-sm">{error}</p>
             </div>
           )}
 
@@ -86,8 +86,8 @@ export default function LoginPage() {
         </p>
         
         <div className="mt-4 p-3 bg-gray-50 rounded-lg text-center text-xs text-gray-400">
-          <p>Demo: admin@example.com / password123</p>
-          <p>or user@example.com / password123</p>
+          <p>Admin: admin@example.com / password123</p>
+          <p>User: user@example.com / password123</p>
         </div>
       </div>
     </div>

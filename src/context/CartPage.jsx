@@ -2,12 +2,10 @@
 import React, { useState } from 'react';
 import { useCart } from './CartContext';
 import { useAuth } from './AuthContext';
-import { useOrder } from './OrderContext';
 import { Link, useNavigate } from 'react-router-dom';
 
 export default function CartPage() {
   const { user } = useAuth();
-  const { placeOrder } = useOrder();
   const navigate = useNavigate();
   
   const { 
@@ -42,51 +40,30 @@ export default function CartPage() {
     );
   }
 
-  // ✅ Checkout Handler (সম্পূর্ণ)
-  const handleCheckout = async () => {
-    setError('');
-    
-    // 1. ইউজার লগইন চেক
+  // ✅ Checkout Handler - Payment Page-এ রিডাইরেক্ট
+  const handleCheckout = () => {
+    // ইউজার চেক
     if (!user) {
       setError('⚠️ Please login to place your order!');
       setTimeout(() => navigate('/login'), 1500);
       return;
     }
 
-    // 2. ইউজার uid চেক
+    // ইউজার uid চেক
     if (!user.uid) {
       setError('⚠️ User session expired. Please login again.');
       setTimeout(() => navigate('/login'), 1500);
       return;
     }
 
-    // 3. কার্ট খালি চেক
+    // কার্ট খালি চেক
     if (cartItems.length === 0) {
       setError('⚠️ Your cart is empty!');
       return;
     }
 
-    setIsCheckingOut(true);
-    try {
-      console.log('🛒 Placing order for user:', user.uid);
-      console.log('📦 Items:', cartItems);
-      console.log('💰 Total:', totalPrice);
-      
-      // ✅ অর্ডার প্লেস করুন
-      const orderId = await placeOrder(cartItems, totalPrice);
-      console.log('✅ Order placed with ID:', orderId);
-      
-      // ✅ কার্ট ক্লিয়ার করুন
-      clearCart();
-      
-      // ✅ অর্ডার পেজে নিয়ে যান
-      alert('🎉 Order placed successfully!');
-      navigate('/orders');
-    } catch (error) {
-      console.error('❌ Checkout error:', error);
-      setError('❌ Failed to place order: ' + error.message);
-    }
-    setIsCheckingOut(false);
+    // ✅ Payment Page-এ রিডাইরেক্ট
+    navigate('/payment');
   };
 
   return (
@@ -244,28 +221,18 @@ export default function CartPage() {
             </div>
           </div>
 
-          {/* Checkout Button */}
+          {/* ✅ Checkout Button - Payment Page-এ যাবে */}
           <div className="mt-4 text-right">
             <button 
               onClick={handleCheckout}
-              disabled={isCheckingOut || cartItems.length === 0}
+              disabled={cartItems.length === 0}
               className={`px-8 py-3 rounded-lg font-semibold transition w-full md:w-auto ${
-                isCheckingOut || cartItems.length === 0
+                cartItems.length === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
               }`}
             >
-              {isCheckingOut ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Processing...
-                </span>
-              ) : (
-                'Proceed to Checkout →'
-              )}
+              Proceed to Payment →
             </button>
             {!user && (
               <p className="text-xs text-gray-400 mt-2">

@@ -12,7 +12,9 @@ import RegisterPage from './context/RegisterPage';
 import OrdersPage from './context/OrdersPage';
 import CartPage from './context/CartPage';
 import AdminDashboard from './Components/AdminDashboard';
-import ContactPage from './Components/ContactPage'; // ✅ যোগ করুন
+import ContactPage from './Components/ContactPage';
+import PaymentPage from './Components/PaymentPage';
+import PaymentSuccess from './Components/PaymentSuccess';
 import Toast from './Components/Toast';
 import SyncStatus from './Components/SyncStatus';
 import './App.css';
@@ -20,18 +22,21 @@ import './App.css';
 function App() {
   const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    const handleToast = (event) => {
-      setToast(event.detail);
-    };
+  // ✅ Toast দেখানোর ফাংশন (global)
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+  };
 
-    window.addEventListener('showToast', handleToast);
-    return () => window.removeEventListener('showToast', handleToast);
-  }, []);
-
+  // ✅ Toast বন্ধ করা
   const hideToast = () => {
     setToast(null);
   };
+
+  // ✅ Global Toast Listener (যেকোনো জায়গা থেকে কল করা যাবে)
+  useEffect(() => {
+    window.showToast = showToast;
+    return () => { delete window.showToast; };
+  }, []);
 
   return (
     <AuthProvider>
@@ -48,7 +53,9 @@ function App() {
                   <Route path="/cart" element={<CartPage />} />
                   <Route path="/orders" element={<OrdersPage />} />
                   <Route path="/admin" element={<AdminDashboard />} />
-                  <Route path="/contact" element={<ContactPage />} /> {/* ✅ যোগ করুন */}
+                  <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/payment" element={<PaymentPage />} />
+                  <Route path="/payment/success" element={<PaymentSuccess />} />
                   <Route path="*" element={
                     <div className="flex items-center justify-center min-h-[60vh]">
                       <div className="text-center">

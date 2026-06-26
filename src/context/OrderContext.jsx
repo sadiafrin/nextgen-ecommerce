@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, query, where, orderBy, doc, getDoc, updateDoc, setDoc, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
-import offlineSync from '../services/OfflineSyncService';
 
 const OrderContext = createContext();
 
@@ -13,9 +12,41 @@ export function OrderProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(null);
 
+  // ✅ অফলাইন অর্ডার সেভ
+  const saveOrderOffline = (orderData) => {
+    try {
+      const pendingOrders = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+      const newOrder = {
+        id: `offline_${Date.now()}`,
+        ...orderData,
+        status: 'pending',
+        synced: false,
+        createdAt: new Date().toISOString()
+      };
+      pendingOrders.push(newOrder);
+      localStorage.setItem('pendingOrders', JSON.stringify(pendingOrders));
+      console.log('📦 Order saved offline:', newOrder);
+      return newOrder;
+    } catch (error) {
+      console.error('Error saving order offline:', error);
+      return null;
+    }
+  };
+
+  // ✅ পেন্ডিং অর্ডার লোড
+  const loadPendingOrders = () => {
+    try {
+      const data = localStorage.getItem('pendingOrders');
+      const orders = data ? JSON.parse(data) : [];
+      console.log('📋 Pending Orders loaded:', orders);
+      return orders;
+    } catch {
+      return [];
+    }
+  };
+
   // ✅ অর্ডার প্লেস করুন (অফলাইন সাপোর্ট সহ)
   const placeOrder = async (items, totalPrice) => {
-    // 1. ইউজার চেক
     if (!user) {
       throw new Error('Please login to place order');
     }
@@ -29,7 +60,6 @@ export function OrderProvider({ children }) {
     }
 
     try {
-      // 2. অর্ডার ডেটা তৈরি করুন
       const orderData = {
         customerId: user.uid,
         customerEmail: user.email || 'guest@example.com',
@@ -48,65 +78,59 @@ export function OrderProvider({ children }) {
           : totalPrice,
       };
 
-      // 3. OfflineSyncService ব্যবহার করুন
-      const result = await offlineSync.saveOrder(orderData);
-      console.log('✅ Order result:', result);
+      const isOnline = navigator.onLine;
 
-      // 4. ✅✅✅ STATS আপডেট করুন (অনলাইনে থাকলে) ✅✅✅
-      if (result.status === 'confirmed' || result.status === 'synced') {
+      if (isOnline) {
+        // ✅ অনলাইন অর্ডার
+        const docRef = await addDoc(collection(db, 'orders'), {
+          ...orderData,
+          status: 'confirmed',
+          createdAt: new Date()
+        });
+
+        // ✅ Stats আপডেট
         try {
           const statsRef = doc(db, 'adminStats', 'stats');
           const statsSnap = await getDoc(statsRef);
-          
           if (statsSnap.exists()) {
-            // Stats আপডেট করুন
             await updateDoc(statsRef, {
               totalOrders: increment(1),
               monthlySales: increment(orderData.totalPrice)
             });
-            console.log('✅ Stats updated! Total Orders increased.');
-          } else {
-            // Stats না থাকলে তৈরি করুন
-            await setDoc(statsRef, {
-              totalOrders: 1,
-              monthlySales: orderData.totalPrice,
-              newCustomers: 0,
-              totalLogins: 0,
-              lastUpdated: new Date()
-            });
-            console.log('✅ Stats document created!');
           }
         } catch (statsError) {
-          console.error('❌ Stats update error:', statsError);
+          console.error('Stats update error:', statsError);
         }
+
+        const newOrder = { id: docRef.id, ...orderData, status: 'confirmed' };
+        setOrders(prev => [newOrder, ...prev]);
+        setCurrentOrder(newOrder);
+
+        if (window.showToast) {
+          window.showToast('🎉 Order placed successfully!', 'success');
+        }
+        return docRef.id;
       } else {
-        console.log('⏳ Order saved offline. Stats will update when synced.');
+        // ✅ অফলাইন অর্ডার
+        const offlineOrder = saveOrderOffline(orderData);
+        if (offlineOrder) {
+          setOrders(prev => [offlineOrder, ...prev]);
+          setCurrentOrder(offlineOrder);
+          
+          if (window.showToast) {
+            window.showToast('📦 Order saved offline! Will sync when online.', 'offline');
+          }
+          return offlineOrder.id;
+        }
+        throw new Error('Failed to save order offline');
       }
-
-      // 5. লোকাল স্টেট আপডেট
-      const newOrder = {
-        id: result.id,
-        ...orderData,
-        status: result.status,
-        orderDate: new Date().toISOString()
-      };
-      
-      setOrders(prev => [newOrder, ...prev]);
-      setCurrentOrder(newOrder);
-
-      // 6. অফলাইনে থাকলে মেসেজ
-      if (result.status === 'pending') {
-        alert('📦 Order saved offline! It will be synced when you are online.');
-      }
-
-      return result.id;
     } catch (error) {
       console.error('❌ Error placing order:', error);
       throw error;
     }
   };
 
-  // ✅ ইউজারের অর্ডার লোড করুন (অনলাইন + অফলাইন)
+  // ✅ ইউজারের অর্ডার লোড করুন
   const loadUserOrders = async () => {
     if (!user) {
       setOrders([]);
@@ -115,7 +139,7 @@ export function OrderProvider({ children }) {
     
     setLoading(true);
     try {
-      // 1. Firebase থেকে অর্ডার লোড করুন
+      // Firebase থেকে অর্ডার
       const q = query(
         collection(db, 'orders'),
         where('customerId', '==', user.uid),
@@ -127,11 +151,10 @@ export function OrderProvider({ children }) {
         ...doc.data()
       }));
 
-      // 2. লোকাল পেন্ডিং অর্ডার লোড করুন
-      const pendingOrders = offlineSync.getPendingOrders();
+      // লোকাল পেন্ডিং অর্ডার
+      const pendingOrders = loadPendingOrders();
       const userPending = pendingOrders.filter(order => order.customerId === user.uid);
 
-      // 3. সব অর্ডার একত্রিত করুন (পেন্ডিং আগে দেখাবে)
       const allOrders = [...userPending, ...firebaseOrders];
       setOrders(allOrders);
       console.log('📋 Loaded orders:', allOrders.length);
@@ -141,7 +164,7 @@ export function OrderProvider({ children }) {
     setLoading(false);
   };
 
-  // ✅ সব অর্ডার লোড করুন (অ্যাডমিনের জন্য)
+  // ✅ সব অর্ডার লোড করুন (অ্যাডমিন)
   const loadAllOrders = async () => {
     setLoading(true);
     try {
@@ -158,7 +181,7 @@ export function OrderProvider({ children }) {
     setLoading(false);
   };
 
-  // ✅ একটি অর্ডারের ডিটেইল লোড করুন
+  // ✅ অর্ডার ডিটেইল
   const getOrderById = async (orderId) => {
     try {
       const docRef = doc(db, 'orders', orderId);
@@ -173,7 +196,7 @@ export function OrderProvider({ children }) {
     }
   };
 
-  // ✅ অর্ডার স্ট্যাটাস আপডেট করুন (অ্যাডমিন)
+  // ✅ অর্ডার স্ট্যাটাস আপডেট
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
@@ -214,6 +237,8 @@ export const useOrder = () => {
     throw new Error('useOrder must be used within an OrderProvider');
   }
   return context;
+
+  
 };
 
 export default OrderContext;

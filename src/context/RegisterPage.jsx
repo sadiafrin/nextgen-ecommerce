@@ -1,6 +1,6 @@
 // src/context/RegisterPage.jsx
 import { useState } from 'react';
-import { useAuth } from './AuthContext';  // ✅ useAuth ব্যবহার করুন
+import { useAuth } from './AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 
 export default function RegisterPage() {
@@ -35,7 +35,6 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(name, email, password);
-      alert('✅ Registration successful! Please login.');
       navigate('/login');
     } catch (err) {
       console.error('Registration error:', err);

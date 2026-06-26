@@ -1,6 +1,4 @@
-/* src/index.css - সম্পূর্ণ নিশ্চিত সংস্করণ */
-
-/* ✅ Tailwind Directives - এই তিনটি লাইন সবচেয়ে গুরুত্বপূর্ণ */
+/* src/index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,6 +11,11 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
 }
 
 /* ===== Shimmer Loading Effect ===== */
@@ -53,7 +56,7 @@ body {
   padding: 20px;
 }
 
-/* ===== স্ক্রলবার কাস্টমাইজেশন ===== */
+/* ===== স্ক্রলবার কাস্টমাইজেশন (ঐচ্ছিক) ===== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -71,6 +74,22 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* ===== অ্যানিমেশন (ঐচ্ছিক) ===== */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
 }
 
 /* ===== প্রোডাক্ট কার্ড হোভার ===== */

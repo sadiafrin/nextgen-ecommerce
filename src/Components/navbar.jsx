@@ -8,10 +8,36 @@ import Sidebar from './Sidebar';
 export default function Navbar() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [showOfflineDropdown, setShowOfflineDropdown] = useState(false);
   
   const navigate = useNavigate();
   const { totalItems } = useCart();
   const { user, isAdmin, logout } = useAuth();
+
+  const getOfflineCounts = () => {
+    try {
+      const pendingUsers = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
+      const offlineLogins = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
+      const pendingOrders = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+      return {
+        pendingUsers: pendingUsers.length,
+        offlineLogins: offlineLogins.length,
+        pendingOrders: pendingOrders.length,
+        total: pendingUsers.length + offlineLogins.length + pendingOrders.length
+      };
+    } catch {
+      return { pendingUsers: 0, offlineLogins: 0, pendingOrders: 0, total: 0 };
+    }
+  };
+
+  const [offlineCounts, setOfflineCounts] = useState(getOfflineCounts());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOfflineCounts(getOfflineCounts());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -29,101 +55,125 @@ export default function Navbar() {
   return (
     <>
       <nav className={`sticky top-0 z-50 transition-all duration-300 ${
-        isScrolled ? 'bg-white shadow-lg' : 'bg-white/95 backdrop-blur-md shadow-sm'
+        isScrolled ? 'bg-white shadow-md' : 'bg-white'
       }`}>
-        <div className="container mx-auto px-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
             
-            {/* ✅ Left: Logo + Navigation Links */}
-            <div className="flex items-center gap-3">
-              {/* Sidebar Toggle (Mobile) */}
+            {/* ✅ Left: Logo + Home */}
+            <div className="flex items-center gap-6">
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 rounded-lg hover:bg-gray-100 transition md:hidden"
-                aria-label="Open menu"
+                className="p-2 rounded-md hover:bg-gray-100 transition md:hidden"
               >
-                <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
 
-              {/* Logo */}
-              <Link to="/" className="flex items-center gap-2 group">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md group-hover:shadow-lg transition">
-                  Q
-                </div>
-                <span className="font-bold text-xl text-gray-800 group-hover:text-blue-600 transition">
-                  Quick<span className="text-blue-600 group-hover:text-gray-800 transition">Buy</span>
-                </span>
+              <Link to="/" className="flex items-center gap-2">
+                <span className="text-xl font-bold text-gray-800">Quick<span className="text-blue-600">Buy</span></span>
               </Link>
 
-              {/* ✅ Desktop Navigation Links */}
-              <div className="hidden md:flex items-center gap-8 ml-4">
-                <Link to="/" className="text-gray-700 hover:text-blue-600 font-medium transition text-sm">
-                  Home
-                </Link>
-                <Link to="/orders" className="text-gray-700 hover:text-blue-600 font-medium transition text-sm">
-                  Orders
-                </Link>
-                {isAdmin && (
-                  <Link to="/admin" className="text-gray-700 hover:text-blue-600 font-medium transition text-sm">
-                    Admin
-                  </Link>
-                )}
-                <Link to="/contact" className="text-gray-700 hover:text-blue-600 font-medium transition text-sm">
-                  Contact
-                </Link>
-              </div>
+              <Link to="/" className="hidden md:block text-sm text-gray-600 hover:text-blue-600 transition">
+                Home
+              </Link>
             </div>
 
-            {/* ✅ Desktop Right Side - শুধু Cart + Auth (Search Bar সরানো হয়েছে) */}
-            <div className="hidden md:flex items-center gap-4">
-              {/* ❌ Search Bar সরানো হয়েছে */}
+            {/* ✅ Center: Nav Links */}
+            <div className="hidden md:flex items-center gap-6">
+              <Link to="/orders" className="text-sm text-gray-600 hover:text-blue-600 transition">
+                Orders
+              </Link>
+              {isAdmin && (
+                <>
+                  <Link to="/admin" className="text-sm text-gray-600 hover:text-blue-600 transition">
+                    Admin
+                  </Link>
+                  
+                  {/* Offline Dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowOfflineDropdown(!showOfflineDropdown)}
+                      className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition"
+                    >
+                      Offline
+                      {offlineCounts.total > 0 && (
+                        <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                          {offlineCounts.total}
+                        </span>
+                      )}
+                      <svg className={`w-3 h-3 transition-transform ${showOfflineDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    
+                    {showOfflineDropdown && (
+                      <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border py-1 z-50">
+                        <Link
+                          to="/admin?tab=offline-users"
+                          onClick={() => setShowOfflineDropdown(false)}
+                          className="flex items-center justify-between px-4 py-2 hover:bg-gray-50 text-sm"
+                        >
+                          <span>📦 Offline Registered</span>
+                          <span className="font-medium">{offlineCounts.pendingUsers}</span>
+                        </Link>
+                        <Link
+                          to="/admin?tab=offline-logins"
+                          onClick={() => setShowOfflineDropdown(false)}
+                          className="flex items-center justify-between px-4 py-2 hover:bg-gray-50 text-sm"
+                        >
+                          <span>📱 Offline Logins</span>
+                          <span className="font-medium">{offlineCounts.offlineLogins}</span>
+                        </Link>
+                        <Link
+                          to="/admin?tab=offline-orders"
+                          onClick={() => setShowOfflineDropdown(false)}
+                          className="flex items-center justify-between px-4 py-2 hover:bg-gray-50 text-sm"
+                        >
+                          <span>📋 Offline Orders</span>
+                          <span className="font-medium">{offlineCounts.pendingOrders}</span>
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              <Link to="/contact" className="text-sm text-gray-600 hover:text-blue-600 transition">
+                Contact
+              </Link>
+            </div>
 
-              {/* Cart */}
-              <Link to="/cart" className="relative p-2 rounded-full hover:bg-gray-100 transition group">
-                <svg className="w-6 h-6 text-gray-600 group-hover:text-blue-600 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* ✅ Right Side: শুধু Cart + Auth (SearchBox নেই) */}
+            <div className="flex items-center gap-4">
+              <Link to="/cart" className="relative p-1.5 hover:bg-gray-100 rounded-md transition">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                 </svg>
                 {totalItems > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
                     {totalItems}
                   </span>
                 )}
               </Link>
 
-              {/* Auth */}
               {user ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Hi, {user.name || 'User'}</span>
-                  <button onClick={handleLogout} className="text-sm text-red-500 hover:text-red-700 font-medium transition">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-700 hidden sm:block">Hi, {user.name || 'User'}</span>
+                  <button onClick={handleLogout} className="text-sm text-red-500 hover:text-red-700 transition">
                     Logout
                   </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <Link to="/login" className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition">
+                  <Link to="/login" className="text-sm text-blue-600 hover:text-blue-700 transition">
                     Login
                   </Link>
-                  <Link to="/register" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm hover:shadow transition">
+                  <Link to="/register" className="text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 transition">
                     Register
                   </Link>
                 </div>
               )}
-            </div>
-
-            {/* ✅ Mobile */}
-            <div className="flex items-center gap-2 md:hidden">
-              <Link to="/cart" className="relative p-2 rounded-full hover:bg-gray-100 transition">
-                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-                {totalItems > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                    {totalItems}
-                  </span>
-                )}
-              </Link>
             </div>
           </div>
         </div>
