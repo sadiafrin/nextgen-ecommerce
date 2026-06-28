@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import { AuthProvider } from './context/AuthContext';
 import { OrderProvider } from './context/OrderContext';
+// ✅ WishlistProvider সরিয়ে ফেলুন
 import Navbar from './Components/navbar';
 import Footer from './Components/Footer';
 import Dashboard from './Components/Dashboard';
@@ -17,22 +18,20 @@ import PaymentPage from './Components/PaymentPage';
 import PaymentSuccess from './Components/PaymentSuccess';
 import Toast from './Components/Toast';
 import SyncStatus from './Components/SyncStatus';
+// ✅ WishlistPage ইম্পোর্ট সরিয়ে ফেলুন
 import './App.css';
 
 function App() {
   const [toast, setToast] = useState(null);
 
-  // ✅ Toast দেখানোর ফাংশন (global)
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
   };
 
-  // ✅ Toast বন্ধ করা
   const hideToast = () => {
     setToast(null);
   };
 
-  // ✅ Global Toast Listener (যেকোনো জায়গা থেকে কল করা যাবে)
   useEffect(() => {
     window.showToast = showToast;
     return () => { delete window.showToast; };
@@ -42,10 +41,11 @@ function App() {
     <AuthProvider>
       <CartProvider>
         <OrderProvider>
+          {/* ✅ WishlistProvider সরিয়ে ফেলুন */}
           <Router>
-            <div className="flex flex-col min-h-screen bg-gray-50">
+            <div className="min-h-screen flex flex-col bg-gray-50">
               <Navbar />
-              <main className="flex-grow container mx-auto px-4 py-6">
+              <main className="flex-1 container mx-auto px-4 py-6">
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/login" element={<LoginPage />} />
@@ -56,12 +56,13 @@ function App() {
                   <Route path="/contact" element={<ContactPage />} />
                   <Route path="/payment" element={<PaymentPage />} />
                   <Route path="/payment/success" element={<PaymentSuccess />} />
+                  {/* ✅ Wishlist Route সরিয়ে ফেলুন */}
                   <Route path="*" element={
                     <div className="flex items-center justify-center min-h-[60vh]">
                       <div className="text-center">
                         <h1 className="text-6xl font-bold text-gray-300">404</h1>
                         <p className="text-xl text-gray-500 mt-4">Page not found</p>
-                        <a href="/" className="mt-6 inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">
+                        <a href="/" className="mt-6 inline-block bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600 transition">
                           Go Home
                         </a>
                       </div>

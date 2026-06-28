@@ -8,8 +8,11 @@ import {
   onAuthStateChanged,
   updateProfile
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, increment, collection, getDocs, query, where } from 'firebase/firestore';
-import offlineTracker from '../services/OfflineTrackerService';
+import { 
+  doc, setDoc, getDoc, updateDoc, increment, 
+  collection, getDocs, query, where, 
+  writeBatch, serverTimestamp 
+} from 'firebase/firestore';
 
 const AuthContext = createContext();
 
@@ -18,12 +21,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [authInitialized, setAuthInitialized] = useState(false);
+  const [authError, setAuthError] = useState(null);
 
   // ✅ পেন্ডিং ইউজার লোড
   const loadPendingUsers = () => {
     try {
       const data = localStorage.getItem('pendingUsers');
-      console.log('📋 loadPendingUsers called, data:', data);
       return data ? JSON.parse(data) : [];
     } catch (error) {
       console.error('❌ Error loading pending users:', error);
@@ -31,23 +35,7 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ পেন্ডিং ইউজার সেভ
-  const savePendingUser = (userData) => {
-    try {
-      console.log('💾 savePendingUser called with:', userData);
-      const pending = loadPendingUsers();
-      pending.push(userData);
-      localStorage.setItem('pendingUsers', JSON.stringify(pending));
-      console.log('✅ Pending user saved successfully!');
-      console.log('📋 Current pending users:', pending);
-      return true;
-    } catch (error) {
-      console.error('❌ Error saving pending user:', error);
-      return false;
-    }
-  };
-
-  // ✅ ইউজার ডেটা ফায়ারস্টোরে সেভ
+  // ✅ ইউজার ডেটা ফায়ারস্টোরে সেভ (Error Handling সহ)
   const saveUserToFirestore = async (uid, email, name, isAdmin = false) => {
     try {
       const userRef = doc(db, 'users', uid);
@@ -59,36 +47,64 @@ export function AuthProvider({ children }) {
           email,
           name: name || email?.split('@')[0] || 'User',
           isAdmin: isAdmin,
-          createdAt: new Date(),
-          lastLogin: new Date(),
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
           loginCount: 1,
           isNewCustomer: true
         });
         
-        const statsRef = doc(db, 'adminStats', 'stats');
-        const statsSnap = await getDoc(statsRef);
-        if (statsSnap.exists()) {
-          await updateDoc(statsRef, {
-            newCustomers: increment(1),
-            totalLogins: increment(1)
-          });
+        // ✅ অ্যাডমিন স্ট্যাটস আপডেট (যদি থাকে)
+        try {
+          const statsRef = doc(db, 'adminStats', 'stats');
+          const statsSnap = await getDoc(statsRef);
+          if (statsSnap.exists()) {
+            await updateDoc(statsRef, {
+              newCustomers: increment(1),
+              totalLogins: increment(1)
+            });
+          }
+        } catch (statsError) {
+          console.warn('⚠️ Admin stats update skipped:', statsError.message);
         }
       } else {
         await updateDoc(userRef, {
-          lastLogin: new Date(),
+          lastLogin: serverTimestamp(),
           loginCount: increment(1)
         });
         
-        const statsRef = doc(db, 'adminStats', 'stats');
-        const statsSnap = await getDoc(statsRef);
-        if (statsSnap.exists()) {
-          await updateDoc(statsRef, {
-            totalLogins: increment(1)
-          });
+        try {
+          const statsRef = doc(db, 'adminStats', 'stats');
+          const statsSnap = await getDoc(statsRef);
+          if (statsSnap.exists()) {
+            await updateDoc(statsRef, {
+              totalLogins: increment(1)
+            });
+          }
+        } catch (statsError) {
+          console.warn('⚠️ Admin stats update skipped:', statsError.message);
         }
       }
+      console.log('✅ User saved to Firestore:', email);
+      return true;
     } catch (error) {
-      console.error('Error saving user to Firestore:', error);
+      console.error('❌ Error saving user to Firestore:', error);
+      
+      // 🔥 Permission Error হলে অফলাইন মোডে সেভ
+      if (error.code === 'permission-denied') {
+        console.warn('⚠️ Permission denied! Saving user offline...');
+        // অফলাইন ইউজার হিসেবে সেভ
+        const offlineUser = {
+          uid: uid,
+          email: email,
+          name: name,
+          isAdmin: isAdmin,
+          isOffline: true,
+          createdAt: new Date().toISOString()
+        };
+        localStorage.setItem('offlineUser_' + uid, JSON.stringify(offlineUser));
+        return false;
+      }
+      throw error;
     }
   };
 
@@ -98,14 +114,21 @@ export function AuthProvider({ children }) {
       console.log('🌐 Online event triggered');
       setIsOnline(true);
       syncPendingUsers();
+      window.dispatchEvent(new CustomEvent('onlineStatusChanged', { detail: { isOnline: true } }));
     };
+    
     const handleOffline = () => {
       console.log('📡 Offline event triggered');
       setIsOnline(false);
+      window.dispatchEvent(new CustomEvent('onlineStatusChanged', { detail: { isOnline: false } }));
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    window.dispatchEvent(new CustomEvent('onlineStatusChanged', { 
+      detail: { isOnline: navigator.onLine } 
+    }));
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -113,7 +136,7 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // ✅ পেন্ডিং ইউজার সিঙ্ক (Sync করার পরেও রাখুন)
+  // ✅ পেন্ডিং ইউজার সিঙ্ক (আপডেটেড)
   const syncPendingUsers = async () => {
     if (!isOnline) return;
 
@@ -124,6 +147,20 @@ export function AuthProvider({ children }) {
 
     for (const userData of pending) {
       try {
+        // ✅ চেক করুন ইমেইল আগে থেকে Firebase এ আছে কিনা
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('email', '==', userData.email));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          console.log(`⚠️ User ${userData.email} already exists in Firebase, skipping...`);
+          const pendingUsers = loadPendingUsers();
+          const filtered = pendingUsers.filter(u => u.email !== userData.email);
+          localStorage.setItem('pendingUsers', JSON.stringify(filtered));
+          continue;
+        }
+
+        // ✅ Firebase Auth-এ ইউজার তৈরি করুন
         const userCredential = await createUserWithEmailAndPassword(
           auth, 
           userData.email, 
@@ -141,16 +178,21 @@ export function AuthProvider({ children }) {
           userData.isAdmin || false
         );
 
-        // ✅ Sync করার পরেও pendingUsers-এ রাখুন (সিঙ্ক হলেও দেখাবে)
-        // removePendingUser(userData.email); // ❌ এই লাইন কমেন্ট করুন
+        // ✅ সিঙ্ক成功后 পেন্ডিং থেকে রিমুভ
+        const pendingUsers = loadPendingUsers();
+        const filtered = pendingUsers.filter(u => u.email !== userData.email);
+        localStorage.setItem('pendingUsers', JSON.stringify(filtered));
 
-        console.log(`✅ Synced user: ${userData.email} (kept in pending list)`);
+        console.log(`✅ Synced user: ${userData.email}`);
         
         if (window.showToast) {
           window.showToast(`✅ User "${userData.email}" synced successfully!`, 'success');
         }
       } catch (error) {
         console.error(`❌ Failed to sync user ${userData.email}:`, error);
+        if (error.code === 'permission-denied') {
+          console.warn('⚠️ Permission denied, keeping user in pending list');
+        }
         if (window.showToast) {
           window.showToast(`❌ Failed to sync user "${userData.email}"`, 'error');
         }
@@ -158,90 +200,133 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ পেন্ডিং ইউজার মুছুন (ঐচ্ছিক)
-  const removePendingUser = (email) => {
-    try {
-      const pending = loadPendingUsers();
-      const filtered = pending.filter(u => u.email !== email);
-      localStorage.setItem('pendingUsers', JSON.stringify(filtered));
-      console.log(`🗑️ Removed pending user: ${email}`);
-      return true;
-    } catch (error) {
-      console.error('Error removing pending user:', error);
-      return false;
-    }
-  };
-
-  // ✅ ১. Register (Offline + Online)
-  const register = async (name, email, password) => {
+  // ✅ ১. Register (Offline + Online) - সম্পূর্ণ আপডেটেড
+  const register = async (email, password, name) => {
     console.log('📝 REGISTER FUNCTION CALLED!');
     console.log('📝 Name:', name, 'Email:', email);
     console.log('📡 Current online status:', navigator.onLine);
+    setAuthError(null);
     
     try {
       const isOnline = navigator.onLine;
       
       if (isOnline) {
         console.log('✅ Online registration flow...');
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('email', '==', email));
-        const querySnapshot = await getDocs(q);
         
-        if (!querySnapshot.empty) {
-          const msg = '❌ This email is already registered. Please login.';
-          if (window.showToast) window.showToast(msg, 'error');
-          throw new Error(msg);
-        }
+        try {
+          // ✅ চেক করুন ইমেইল আগে থেকে আছে কিনা
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('email', '==', email));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const msg = '❌ This email is already registered. Please login.';
+            if (window.showToast) window.showToast(msg, 'error');
+            throw new Error(msg);
+          }
 
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName: name });
-        await saveUserToFirestore(userCredential.user.uid, email, name, false);
-        
-        const msg = '✅ Registration successful! Please login.';
-        if (window.showToast) window.showToast(msg, 'success');
-        return userCredential.user;
-      } else {
-        // ✅ অফলাইন রেজিস্টার
-        console.log('📦 OFFLINE REGISTRATION FLOW STARTED!');
-        console.log('📦 Saving user offline:', { name, email });
-        
-        // 1. পেন্ডিং ইউজার লোড
-        let pendingUsers = [];
-        const saved = localStorage.getItem('pendingUsers');
-        if (saved) {
-          pendingUsers = JSON.parse(saved);
-          console.log('📋 Loaded existing pending users:', pendingUsers);
-        } else {
-          console.log('📋 No existing pending users found.');
+          // ✅ Firebase Auth-এ ইউজার তৈরি করুন
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          await updateProfile(userCredential.user, { displayName: name });
+          
+          // ✅ Firestore-এ ইউজার সেভ করুন
+          try {
+            await saveUserToFirestore(userCredential.user.uid, email, name, false);
+          } catch (firestoreError) {
+            console.warn('⚠️ Firestore save failed but auth successful:', firestoreError.message);
+            // Firestore এ সেভ না হলেও Auth তো কাজ করছে
+          }
+          
+          // ✅ ইউজার সেট করুন
+          const userData = {
+            uid: userCredential.user.uid,
+            email: userCredential.user.email,
+            name: name,
+            isAdmin: false
+          };
+          setUser(userData);
+          localStorage.setItem('user', JSON.stringify(userData));
+          
+          const msg = '✅ Registration successful! Welcome!';
+          if (window.showToast) window.showToast(msg, 'success');
+          
+          window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: userData } }));
+          
+          return userCredential.user;
+          
+        } catch (authError) {
+          console.error('❌ Firebase Auth error:', authError);
+          
+          // 🔥 Firebase Auth error হলে অফলাইন মোডে ফলব্যাক
+          if (authError.code === 'auth/network-request-failed' || 
+              authError.code === 'auth/too-many-requests' ||
+              authError.code === 'auth/internal-error' ||
+              authError.code === 'auth/operation-not-allowed') {
+            console.log('📡 Switching to offline mode...');
+            
+            // অফলাইন রেজিস্টার
+            const offlineUser = {
+              uid: `offline_${Date.now()}`,
+              email: email,
+              name: name,
+              isAdmin: false,
+              isOffline: true
+            };
+            
+            let pendingUsers = loadPendingUsers();
+            // চেক করুন ইমেইল আগে থেকে পেন্ডিং লিস্টে আছে কিনা
+            const existing = pendingUsers.find(u => u.email === email);
+            if (!existing) {
+              pendingUsers.push({ name, email, password, isAdmin: false });
+              localStorage.setItem('pendingUsers', JSON.stringify(pendingUsers));
+            }
+            
+            setUser(offlineUser);
+            localStorage.setItem('user', JSON.stringify(offlineUser));
+            
+            const msg = '📦 Network issue. Registration saved offline.';
+            if (window.showToast) window.showToast(msg, 'offline');
+            
+            window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: offlineUser } }));
+            
+            return offlineUser;
+          }
+          
+          throw authError;
         }
         
-        // 2. ইমেইল চেক
+      } else {
+        // ✅✅✅ অফলাইন রেজিস্টার
+        console.log('📦 OFFLINE REGISTRATION FLOW STARTED!');
+        
+        let pendingUsers = loadPendingUsers();
+        
+        // চেক করুন ইমেইল আগে থেকে আছে কিনা
         const existing = pendingUsers.find(u => u.email === email);
         if (existing) {
           console.log('❌ Email already exists in pending list:', email);
-          const msg = '❌ This email is already registered offline. Will sync when online.';
+          const msg = '❌ This email is already registered offline.';
           if (window.showToast) window.showToast(msg, 'error');
           throw new Error(msg);
         }
 
-        // 3. নতুন ইউজার তৈরি
+        // অফলাইন ইউজার তৈরি করুন
         const userData = {
-          name,
-          email,
-          password,
+          name: name,
+          email: email,
+          password: password,
           isAdmin: false,
           createdAt: new Date().toISOString(),
           synced: false
         };
-        console.log('📦 New user data:', userData);
+        console.log('📦 New offline user data:', userData);
         
-        // 4. localStorage-এ সেভ
+        // localStorage-এ সেভ করুন
         pendingUsers.push(userData);
         localStorage.setItem('pendingUsers', JSON.stringify(pendingUsers));
-        console.log('✅ Pending user saved to localStorage!');
-        console.log('📋 Updated pending users list:', pendingUsers);
+        console.log('✅ Offline user saved to localStorage!');
         
-        // 5. Offline সেশন তৈরি
+        // Offline সেশন তৈরি করুন
         const offlineUser = {
           uid: `offline_${Date.now()}`,
           email: email,
@@ -255,39 +340,97 @@ export function AuthProvider({ children }) {
 
         const msg = '📦 You are offline. Registration saved. Will sync when online.';
         if (window.showToast) window.showToast(msg, 'offline');
+        
+        window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: offlineUser } }));
+        
         return offlineUser;
       }
     } catch (error) {
       console.error('❌ Registration error:', error);
+      setAuthError(error.message);
       throw error;
     }
   };
 
-  // ✅ ২. Login (Offline + Online)
+  // ✅ ২. Login (Offline + Online) - সম্পূর্ণ আপডেটেড
   const login = async (email, password) => {
     console.log('🔑 LOGIN FUNCTION CALLED!');
     console.log('📡 Current online status:', navigator.onLine);
+    setAuthError(null);
     
     try {
       const isOnline = navigator.onLine;
       
       if (isOnline) {
         console.log('✅ Online login flow...');
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const msg = '✅ Login successful!';
-        if (window.showToast) window.showToast(msg, 'success');
-        return userCredential.user;
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, email, password);
+          
+          // ✅ ইউজার ডেটা সেট করুন
+          const userData = {
+            uid: userCredential.user.uid,
+            email: userCredential.user.email,
+            name: userCredential.user.displayName || userCredential.user.email?.split('@')[0] || 'User',
+            isAdmin: userCredential.user.email === 'admin@example.com'
+          };
+          setUser(userData);
+          localStorage.setItem('user', JSON.stringify(userData));
+          
+          // Firestore আপডেট করার চেষ্টা করুন
+          try {
+            await saveUserToFirestore(userData.uid, userData.email, userData.name, userData.isAdmin);
+          } catch (firestoreError) {
+            console.warn('⚠️ Firestore update skipped:', firestoreError.message);
+          }
+          
+          const msg = '✅ Login successful!';
+          if (window.showToast) window.showToast(msg, 'success');
+          
+          window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: userData } }));
+          
+          return userCredential.user;
+          
+        } catch (authError) {
+          console.error('❌ Firebase Auth login error:', authError);
+          
+          // 🔥 Auth error হলে অফলাইন চেক করুন
+          if (authError.code === 'auth/user-not-found' || 
+              authError.code === 'auth/wrong-password' ||
+              authError.code === 'auth/too-many-requests') {
+            
+            // অফলাইন ইউজার চেক করুন
+            const pendingUsers = loadPendingUsers();
+            const pendingUser = pendingUsers.find(u => u.email === email && u.password === password);
+            
+            if (pendingUser) {
+              console.log('✅ Found pending user, logging in offline mode');
+              const offlineUser = {
+                uid: `offline_${Date.now()}`,
+                email: pendingUser.email,
+                name: pendingUser.name,
+                isAdmin: false,
+                isOffline: true
+              };
+              setUser(offlineUser);
+              localStorage.setItem('user', JSON.stringify(offlineUser));
+              
+              const msg = '📡 Logged in with offline account. Please sync when online.';
+              if (window.showToast) window.showToast(msg, 'offline');
+              
+              window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: offlineUser } }));
+              
+              return offlineUser;
+            }
+          }
+          
+          throw authError;
+        }
       } else {
+        // 📡 অফলাইন লগইন
         console.log('📡 OFFLINE LOGIN FLOW STARTED!');
         
         // 1. পেন্ডিং ইউজার চেক
-        let pendingUsers = [];
-        const saved = localStorage.getItem('pendingUsers');
-        if (saved) {
-          pendingUsers = JSON.parse(saved);
-          console.log('📋 Loaded pending users:', pendingUsers);
-        }
-        
+        const pendingUsers = loadPendingUsers();
         const pendingUser = pendingUsers.find(u => u.email === email && u.password === password);
         
         if (pendingUser) {
@@ -302,11 +445,11 @@ export function AuthProvider({ children }) {
           setUser(offlineUser);
           localStorage.setItem('user', JSON.stringify(offlineUser));
           
-          // Offline Login রেকর্ড
-          offlineTracker.recordOfflineLogin(offlineUser);
-          
           const msg = '📡 You are offline. Logged in with saved data.';
           if (window.showToast) window.showToast(msg, 'offline');
+          
+          window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: offlineUser } }));
+          
           return offlineUser;
         }
 
@@ -317,9 +460,11 @@ export function AuthProvider({ children }) {
           if (parsed.email === email) {
             console.log('✅ Found user in localStorage:', parsed);
             setUser(parsed);
-            offlineTracker.recordOfflineLogin(parsed);
             const msg = '📡 Logged in from saved session.';
             if (window.showToast) window.showToast(msg, 'info');
+            
+            window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: parsed } }));
+            
             return parsed;
           }
         }
@@ -331,6 +476,7 @@ export function AuthProvider({ children }) {
       }
     } catch (error) {
       console.error('❌ Login error:', error);
+      setAuthError(error.message);
       throw error;
     }
   };
@@ -343,6 +489,9 @@ export function AuthProvider({ children }) {
       }
       setUser(null);
       localStorage.removeItem('user');
+      
+      window.dispatchEvent(new CustomEvent('userLoggedOut'));
+      
       const msg = '👋 Logged out successfully.';
       if (window.showToast) window.showToast(msg, 'info');
     } catch (error) {
@@ -351,33 +500,50 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ ৪. Auth State চেক
+  // ✅ ৪. Auth State চেক (আপডেটেড)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const userData = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-          isAdmin: firebaseUser.email === 'admin@example.com'
-        };
-        setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
-      } else {
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          if (parsed.isOffline) {
-            setUser(parsed);
+      console.log('🔥 Auth state changed:', firebaseUser?.email || 'No user');
+      
+      try {
+        if (firebaseUser) {
+          const userData = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            isAdmin: firebaseUser.email === 'admin@example.com'
+          };
+          setUser(userData);
+          localStorage.setItem('user', JSON.stringify(userData));
+          setAuthInitialized(true);
+          
+          window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: userData } }));
+        } else {
+          // ✅ অফলাইন ইউজার চেক করুন
+          const savedUser = localStorage.getItem('user');
+          if (savedUser) {
+            const parsed = JSON.parse(savedUser);
+            if (parsed.isOffline) {
+              console.log('📡 Using offline user:', parsed);
+              setUser(parsed);
+              setAuthInitialized(true);
+              window.dispatchEvent(new CustomEvent('userLoggedIn', { detail: { user: parsed } }));
+            } else {
+              setUser(null);
+              localStorage.removeItem('user');
+              setAuthInitialized(true);
+            }
           } else {
             setUser(null);
-            localStorage.removeItem('user');
+            setAuthInitialized(true);
           }
-        } else {
-          setUser(null);
         }
+      } catch (error) {
+        console.error('❌ Auth state error:', error);
+        setAuthError(error.message);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -414,6 +580,21 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // ✅ ৭. পেন্ডিং ইউজার পেতে
+  const getPendingUsers = () => {
+    return loadPendingUsers();
+  };
+
+  // ✅ ৮. অফলাইন ইউজার চেক
+  const hasOfflineUser = () => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser);
+      return parsed.isOffline || false;
+    }
+    return false;
+  };
+
   const value = {
     user,
     loading,
@@ -423,8 +604,13 @@ export function AuthProvider({ children }) {
     logout,
     loadAllUsers,
     loadAdminStats,
+    getPendingUsers,
     isAdmin: user?.isAdmin || false,
-    isAuthenticated: !!user
+    isAuthenticated: !!user,
+    authInitialized,
+    authError,
+    hasOfflineUser,
+    syncPendingUsers
   };
 
   return (
@@ -437,7 +623,7 @@ export function AuthProvider({ children }) {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('❌ useAuth must be used within an AuthProvider');
   }
   return context;
 };

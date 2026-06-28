@@ -1,7 +1,10 @@
 // src/context/OrderContext.jsx
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, getDocs, query, where, orderBy, doc, getDoc, updateDoc, setDoc, increment } from 'firebase/firestore';
+import { 
+  collection, addDoc, getDocs, query, where, orderBy, 
+  doc, getDoc, updateDoc, setDoc, increment, deleteDoc 
+} from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 
 const OrderContext = createContext();
@@ -11,42 +14,86 @@ export function OrderProvider({ children }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(null);
+  const [offlineOrders, setOfflineOrders] = useState([]);
+  const [error, setError] = useState(null);
+  const hasLoadedRef = useRef(false);
+
+  // ✅ টোটাল প্রাইস ক্যালকুলেট করার ফাংশন
+  const calculateOrderTotal = useCallback((items) => {
+    if (!items || items.length === 0) return 0;
+    
+    return items.reduce((sum, item) => {
+      let price = 0;
+      if (typeof item.price === 'string') {
+        const cleaned = item.price.replace(/[^0-9.]/g, '');
+        price = parseFloat(cleaned) || 0;
+      } else {
+        price = Number(item.price) || 0;
+      }
+      const quantity = Number(item.quantity) || 1;
+      return sum + (price * quantity);
+    }, 0);
+  }, []);
+
+  // ✅ অফলাইন অর্ডার লোড
+  const loadOfflineOrders = useCallback(() => {
+    try {
+      const data = localStorage.getItem('pendingOrders');
+      const orders = data ? JSON.parse(data) : [];
+      setOfflineOrders(orders);
+      return orders;
+    } catch (error) {
+      console.error('Error loading offline orders:', error);
+      return [];
+    }
+  }, []);
 
   // ✅ অফলাইন অর্ডার সেভ
-  const saveOrderOffline = (orderData) => {
+  const saveOfflineOrders = useCallback((orders) => {
     try {
-      const pendingOrders = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+      localStorage.setItem('pendingOrders', JSON.stringify(orders));
+      setOfflineOrders(orders);
+    } catch (error) {
+      console.error('Error saving offline orders:', error);
+    }
+  }, []);
+
+  // ✅ অফলাইন অর্ডার সেভ (হেল্পার)
+  const saveOrderOffline = useCallback((orderData) => {
+    try {
+      const pendingOrders = loadOfflineOrders();
       const newOrder = {
-        id: `offline_${Date.now()}`,
+        id: `offline_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         ...orderData,
         status: 'pending',
         synced: false,
-        createdAt: new Date().toISOString()
+        isOffline: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
+      
       pendingOrders.push(newOrder);
-      localStorage.setItem('pendingOrders', JSON.stringify(pendingOrders));
-      console.log('📦 Order saved offline:', newOrder);
+      saveOfflineOrders(pendingOrders);
+      
       return newOrder;
     } catch (error) {
       console.error('Error saving order offline:', error);
       return null;
     }
-  };
+  }, [loadOfflineOrders, saveOfflineOrders]);
 
   // ✅ পেন্ডিং অর্ডার লোড
-  const loadPendingOrders = () => {
+  const loadPendingOrders = useCallback(() => {
     try {
       const data = localStorage.getItem('pendingOrders');
-      const orders = data ? JSON.parse(data) : [];
-      console.log('📋 Pending Orders loaded:', orders);
-      return orders;
+      return data ? JSON.parse(data) : [];
     } catch {
       return [];
     }
-  };
+  }, []);
 
-  // ✅ অর্ডার প্লেস করুন (অফলাইন সাপোর্ট সহ)
-  const placeOrder = async (items, totalPrice) => {
+  // ✅ অর্ডার প্লেস করুন
+  const placeOrder = useCallback(async (items, totalPrice) => {
     if (!user) {
       throw new Error('Please login to place order');
     }
@@ -60,22 +107,31 @@ export function OrderProvider({ children }) {
     }
 
     try {
+      // ✅ আইটেম প্রসেস করুন
+      const orderItems = items.map(item => ({
+        id: item.id || `item_${Date.now()}`,
+        name: item.name || 'Unknown Product',
+        price: typeof item.price === 'string' 
+          ? parseFloat(item.price.replace(/[^0-9.]/g, '')) || 0
+          : Number(item.price) || 0,
+        quantity: Number(item.quantity) || 1,
+        image: item.image || '/no-image.png',
+        category: item.category || 'General'
+      }));
+
+      // ✅ টোটাল ক্যালকুলেট (নিশ্চিত)
+      const calculatedTotal = calculateOrderTotal(orderItems);
+      const finalTotal = Number(totalPrice) || calculatedTotal;
+
       const orderData = {
         customerId: user.uid,
         customerEmail: user.email || 'guest@example.com',
-        customerName: user.name || user.email?.split('@')[0] || 'Guest',
-        items: items.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: typeof item.price === 'string' 
-            ? parseFloat(item.price.replace(/[^0-9.]/g, '')) 
-            : item.price,
-          quantity: item.quantity || 1,
-          image: item.image || '/no-image.png'
-        })),
-        totalPrice: typeof totalPrice === 'string' 
-          ? parseFloat(totalPrice.replace(/[^0-9.]/g, '')) 
-          : totalPrice,
+        customerName: user.displayName || user.name || user.email?.split('@')[0] || 'Guest',
+        items: orderItems,
+        totalPrice: finalTotal,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       const isOnline = navigator.onLine;
@@ -85,7 +141,9 @@ export function OrderProvider({ children }) {
         const docRef = await addDoc(collection(db, 'orders'), {
           ...orderData,
           status: 'confirmed',
-          createdAt: new Date()
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isOffline: false
         });
 
         // ✅ Stats আপডেট
@@ -95,14 +153,22 @@ export function OrderProvider({ children }) {
           if (statsSnap.exists()) {
             await updateDoc(statsRef, {
               totalOrders: increment(1),
-              monthlySales: increment(orderData.totalPrice)
+              monthlySales: increment(finalTotal)
+            });
+          } else {
+            await setDoc(statsRef, {
+              totalOrders: 1,
+              monthlySales: finalTotal,
+              newCustomers: 0,
+              totalLogins: 0,
+              lastUpdated: new Date().toISOString()
             });
           }
         } catch (statsError) {
           console.error('Stats update error:', statsError);
         }
 
-        const newOrder = { id: docRef.id, ...orderData, status: 'confirmed' };
+        const newOrder = { id: docRef.id, ...orderData, status: 'confirmed', isOffline: false };
         setOrders(prev => [newOrder, ...prev]);
         setCurrentOrder(newOrder);
 
@@ -113,6 +179,7 @@ export function OrderProvider({ children }) {
       } else {
         // ✅ অফলাইন অর্ডার
         const offlineOrder = saveOrderOffline(orderData);
+        
         if (offlineOrder) {
           setOrders(prev => [offlineOrder, ...prev]);
           setCurrentOrder(offlineOrder);
@@ -128,45 +195,90 @@ export function OrderProvider({ children }) {
       console.error('❌ Error placing order:', error);
       throw error;
     }
-  };
+  }, [user, saveOrderOffline, calculateOrderTotal]);
 
   // ✅ ইউজারের অর্ডার লোড করুন
-  const loadUserOrders = async () => {
+  const loadUserOrders = useCallback(async () => {
     if (!user) {
       setOrders([]);
       return;
     }
     
+    if (loading) return;
+    
     setLoading(true);
+    setError(null);
     try {
-      // Firebase থেকে অর্ডার
-      const q = query(
-        collection(db, 'orders'),
-        where('customerId', '==', user.uid),
-        orderBy('createdAt', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
-      const firebaseOrders = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      let allOrders = [];
 
-      // লোকাল পেন্ডিং অর্ডার
+      // ✅ Firebase থেকে অর্ডার
+      if (navigator.onLine) {
+        try {
+          const q = query(
+            collection(db, 'orders'),
+            where('customerId', '==', user.uid),
+            orderBy('createdAt', 'desc')
+          );
+          const querySnapshot = await getDocs(q);
+          const firebaseOrders = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            isOffline: false,
+            createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
+          }));
+          allOrders = [...allOrders, ...firebaseOrders];
+        } catch (error) {
+          console.error('Error loading online orders:', error);
+          if (error.message.includes('index')) {
+            const allOrdersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+            const allSnapshot = await getDocs(allOrdersQuery);
+            const allFirebaseOrders = allSnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              isOffline: false,
+              createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
+            }));
+            const userOrders = allFirebaseOrders.filter(o => o.customerId === user.uid);
+            allOrders = [...allOrders, ...userOrders];
+          }
+        }
+      }
+
+      // ✅ লোকাল পেন্ডিং অর্ডার
       const pendingOrders = loadPendingOrders();
       const userPending = pendingOrders.filter(order => order.customerId === user.uid);
+      
+      // ✅ অফলাইন অর্ডারের টোটাল রিক্যালকুলেট
+      const processedPending = userPending.map(order => ({
+        ...order,
+        totalPrice: calculateOrderTotal(order.items) || order.totalPrice || 0
+      }));
+      
+      allOrders = [...allOrders, ...processedPending];
 
-      const allOrders = [...userPending, ...firebaseOrders];
+      // ✅ ডেট অনুযায়ী সাজানো
+      allOrders.sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0);
+        const dateB = new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
+
       setOrders(allOrders);
-      console.log('📋 Loaded orders:', allOrders.length);
+      hasLoadedRef.current = true;
+      return allOrders;
     } catch (error) {
       console.error('Error loading orders:', error);
+      setError(error.message);
+      return [];
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [user, loading, loadPendingOrders, calculateOrderTotal]);
 
   // ✅ সব অর্ডার লোড করুন (অ্যাডমিন)
-  const loadAllOrders = async () => {
+  const loadAllOrders = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
@@ -175,53 +287,232 @@ export function OrderProvider({ children }) {
         ...doc.data()
       }));
       setOrders(ordersList);
+      return ordersList;
     } catch (error) {
       console.error('Error loading all orders:', error);
+      setError(error.message);
+      return [];
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, []);
 
   // ✅ অর্ডার ডিটেইল
-  const getOrderById = async (orderId) => {
+  const getOrderById = useCallback(async (orderId) => {
     try {
-      const docRef = doc(db, 'orders', orderId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        return { id: docSnap.id, ...docSnap.data() };
+      const pendingOrders = loadPendingOrders();
+      const offlineOrder = pendingOrders.find(o => o.id === orderId);
+      if (offlineOrder) {
+        return {
+          ...offlineOrder,
+          totalPrice: calculateOrderTotal(offlineOrder.items) || offlineOrder.totalPrice || 0
+        };
+      }
+
+      if (navigator.onLine) {
+        const docRef = doc(db, 'orders', orderId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          return { id: docSnap.id, ...docSnap.data() };
+        }
       }
       return null;
     } catch (error) {
       console.error('Error getting order:', error);
       return null;
     }
-  };
+  }, [loadPendingOrders, calculateOrderTotal]);
 
   // ✅ অর্ডার স্ট্যাটাস আপডেট
-  const updateOrderStatus = async (orderId, newStatus) => {
+  const updateOrderStatus = useCallback(async (orderId, newStatus) => {
     try {
-      const orderRef = doc(db, 'orders', orderId);
-      await updateDoc(orderRef, { status: newStatus });
+      const pendingOrders = loadPendingOrders();
+      const offlineOrder = pendingOrders.find(o => o.id === orderId);
       
-      setOrders(prev => prev.map(order => 
-        order.id === orderId ? { ...order, status: newStatus } : order
-      ));
+      if (offlineOrder) {
+        const updatedOrders = pendingOrders.map(o => 
+          o.id === orderId ? { ...o, status: newStatus, updatedAt: new Date().toISOString() } : o
+        );
+        saveOfflineOrders(updatedOrders);
+        
+        setOrders(prev => prev.map(order => 
+          order.id === orderId ? { ...order, status: newStatus } : order
+        ));
+        return true;
+      }
+
+      if (navigator.onLine) {
+        const orderRef = doc(db, 'orders', orderId);
+        await updateDoc(orderRef, { 
+          status: newStatus,
+          updatedAt: new Date()
+        });
+        
+        setOrders(prev => prev.map(order => 
+          order.id === orderId ? { ...order, status: newStatus } : order
+        ));
+        return true;
+      }
       
-      return true;
+      return false;
     } catch (error) {
       console.error('Error updating order status:', error);
       return false;
     }
-  };
+  }, [loadPendingOrders, saveOfflineOrders]);
+
+  // ✅ অর্ডার ডিলিট
+  const deleteOrder = useCallback(async (orderId) => {
+    try {
+      const pendingOrders = loadPendingOrders();
+      const offlineOrder = pendingOrders.find(o => o.id === orderId);
+      
+      if (offlineOrder) {
+        const updatedOrders = pendingOrders.filter(o => o.id !== orderId);
+        saveOfflineOrders(updatedOrders);
+        
+        setOrders(prev => prev.filter(order => order.id !== orderId));
+        return true;
+      }
+
+      if (navigator.onLine) {
+        await deleteDoc(doc(db, 'orders', orderId));
+        setOrders(prev => prev.filter(order => order.id !== orderId));
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      return false;
+    }
+  }, [loadPendingOrders, saveOfflineOrders]);
+
+  // ✅ ইনভয়েস জেনারেট
+  const generateInvoice = useCallback((order) => {
+    if (!order) return null;
+
+    const items = order.items || [];
+    const totalAmount = calculateOrderTotal(items);
+    
+    return {
+      invoiceNumber: `INV-${order.id?.slice(0, 8) || Date.now()}`,
+      date: order.createdAt || new Date().toISOString(),
+      customerName: order.customerName || order.customerEmail || 'Guest',
+      customerEmail: order.customerEmail || 'N/A',
+      items: items.map(item => ({
+        name: item.name || 'Unknown Product',
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+        total: (Number(item.price) || 0) * (Number(item.quantity) || 1)
+      })),
+      subtotal: totalAmount,
+      tax: 0,
+      shipping: 0,
+      total: totalAmount,
+      status: order.status || 'pending'
+    };
+  }, [calculateOrderTotal]);
+
+  // ✅ অফলাইন অর্ডার সিঙ্ক
+  const syncOfflineOrders = useCallback(async () => {
+    if (!navigator.onLine) {
+      console.log('📡 Offline, skipping sync');
+      return;
+    }
+
+    if (!user) {
+      console.log('👤 No user, skipping sync');
+      return;
+    }
+
+    const pendingOrders = loadPendingOrders();
+    const pendingSync = pendingOrders.filter(o => !o.synced && o.customerId === user.uid);
+
+    if (pendingSync.length === 0) {
+      console.log('✅ No offline orders to sync');
+      return;
+    }
+
+    console.log(`🔄 Syncing ${pendingSync.length} offline orders...`);
+
+    let syncedCount = 0;
+    for (const order of pendingSync) {
+      try {
+        const orderData = {
+          customerId: order.customerId,
+          customerEmail: order.customerEmail,
+          customerName: order.customerName,
+          items: order.items || [],
+          totalPrice: order.totalPrice || 0,
+          status: order.status || 'pending',
+          createdAt: new Date(order.createdAt),
+          isOffline: true,
+          syncedAt: new Date().toISOString()
+        };
+
+        const docRef = await addDoc(collection(db, 'orders'), orderData);
+        console.log(`✅ Order synced with ID: ${docRef.id}`);
+
+        const updatedOrders = pendingOrders.filter(o => o.id !== order.id);
+        saveOfflineOrders(updatedOrders);
+        
+        setOrders(prev => prev.map(o => 
+          o.id === order.id ? { ...o, synced: true, firebaseId: docRef.id } : o
+        ));
+        
+        syncedCount++;
+        
+      } catch (error) {
+        console.error(`❌ Failed to sync order ${order.id}:`, error);
+      }
+    }
+
+    if (syncedCount > 0) {
+      await loadUserOrders();
+    }
+  }, [user, loadPendingOrders, saveOfflineOrders, loadUserOrders]);
+
+  // ✅ ইউজার চেঞ্জ হলে অর্ডার লোড
+  useEffect(() => {
+    if (user && !hasLoadedRef.current) {
+      loadUserOrders();
+    } else if (!user) {
+      setOrders([]);
+      hasLoadedRef.current = false;
+    }
+  }, [user, loadUserOrders]);
+
+  // ✅ অনলাইন হলে অফলাইন অর্ডার সিঙ্ক
+  useEffect(() => {
+    const handleOnline = () => {
+      if (navigator.onLine && user) {
+        console.log('🌐 Online detected, syncing offline orders...');
+        syncOfflineOrders();
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [user, syncOfflineOrders]);
 
   const value = {
     orders,
     loading,
+    error,
     currentOrder,
+    offlineOrders,
     placeOrder,
     loadUserOrders,
     loadAllOrders,
+    loadPendingOrders,
     getOrderById,
-    updateOrderStatus
+    updateOrderStatus,
+    deleteOrder,
+    syncOfflineOrders,
+    generateInvoice,
+    loadOfflineOrders,
+    calculateOrderTotal
   };
 
   return (
@@ -237,8 +528,6 @@ export const useOrder = () => {
     throw new Error('useOrder must be used within an OrderProvider');
   }
   return context;
-
-  
 };
 
 export default OrderContext;

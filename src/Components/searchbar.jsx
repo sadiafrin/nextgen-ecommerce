@@ -11,13 +11,19 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
   // ✅ টেক্সট সার্চ - onChange ইভেন্ট
   const handleSearchChange = (e) => {
     const value = e.target.value;
-    setSearchQuery(value); // ← এখানে setSearchQuery কল হচ্ছে
+    setSearchQuery(value);
   };
 
   // ✅ ইমেজ সার্চ
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
+
+    // ফাইল সাইজ চেক (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image size should be less than 5MB');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -30,7 +36,7 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
     // ফাইলের নাম থেকে সার্চ টার্ম তৈরি
     const imageName = file.name.replace(/\.[^/.]+$/, '');
     const searchTerm = imageName.replace(/[_-]/g, ' ');
-    setSearchQuery(searchTerm); // ← ইমেজ থেকেও সার্চ সেট হচ্ছে
+    setSearchQuery(searchTerm);
   };
 
   // ✅ ভয়েস সার্চ
@@ -47,7 +53,7 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
 
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
-        setSearchQuery(transcript); // ← ভয়েস থেকেও সার্চ সেট হচ্ছে
+        setSearchQuery(transcript);
         setIsListening(false);
       };
 
@@ -79,14 +85,16 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
           type="text"
           value={searchQuery}
           onChange={handleSearchChange}
-          placeholder="Search products..."
-          className="w-full px-3 sm:px-4 py-1.5 sm:py-2.5 pr-32 sm:pr-36 rounded-lg border border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition text-sm"
+          placeholder="🔍 Search products..."
+          className="w-full px-3 sm:px-4 py-2 sm:py-2.5 pr-32 sm:pr-36 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition text-sm bg-white/90 backdrop-blur-sm"
         />
         
+        {/* Clear Button */}
         {searchQuery && (
           <button
             onClick={clearSearch}
             className="absolute right-28 sm:right-32 text-gray-400 hover:text-gray-600 transition p-1"
+            type="button"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -94,9 +102,14 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
           </button>
         )}
 
+        {/* Image Search Button */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="absolute right-14 sm:right-16 p-1.5 rounded-lg transition text-gray-500 hover:text-blue-600 hover:bg-gray-100 border border-gray-200"
+          className={`absolute right-14 sm:right-16 p-1.5 rounded-lg transition border ${
+            isImageSearch 
+              ? 'text-blue-600 bg-blue-50 border-blue-300' 
+              : 'text-gray-500 hover:text-blue-600 hover:bg-gray-100 border-gray-200'
+          }`}
           title="Search by image"
           type="button"
         >
@@ -113,12 +126,13 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
           className="hidden"
         />
 
+        {/* Voice Search Button */}
         <button
           onClick={handleVoiceSearch}
-          className={`absolute right-6 sm:right-7 p-1.5 rounded-lg transition ${
+          className={`absolute right-6 sm:right-7 p-1.5 rounded-lg transition border ${
             isListening 
-              ? 'text-red-500 animate-pulse bg-red-50 border border-red-200' 
-              : 'text-gray-500 hover:text-blue-600 hover:bg-gray-100 border border-gray-200'
+              ? 'text-red-500 animate-pulse bg-red-50 border-red-300' 
+              : 'text-gray-500 hover:text-blue-600 hover:bg-gray-100 border-gray-200'
           }`}
           title="Voice search"
           type="button"
@@ -128,9 +142,10 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
           </svg>
         </button>
 
+        {/* Search Submit Button */}
         <button
           type="submit"
-          className="absolute right-0.5 sm:right-1 p-1.5 sm:p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          className="absolute right-0.5 sm:right-1 p-1.5 sm:p-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition shadow-sm"
         >
           <svg className="w-3 sm:w-4 h-3 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -138,17 +153,24 @@ export default function SearchBar({ searchQuery, setSearchQuery }) {
         </button>
       </div>
 
+      {/* Image Preview Popup */}
       {imagePreview && (
-        <div className="absolute top-full mt-2 left-0 right-0 bg-white rounded-lg shadow-lg p-3 border border-gray-200 z-10 flex items-center gap-3">
+        <div className="absolute top-full mt-2 left-0 right-0 bg-white rounded-xl shadow-xl p-3 border border-gray-200 z-20 flex items-center gap-3 animate-fadeIn">
           <img src={imagePreview} alt="Search" className="w-12 h-12 object-cover rounded-lg border" />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-700">🔍 Searching by image</p>
             <p className="text-xs text-gray-400 truncate">{imageName}</p>
           </div>
-          <button onClick={clearSearch} className="text-gray-400 hover:text-gray-600 p-1">✕</button>
+          <button 
+            onClick={clearSearch} 
+            className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition"
+          >
+            ✕
+          </button>
         </div>
       )}
 
+      {/* Voice Listening Indicator */}
       {isListening && (
         <div className="absolute -bottom-5 sm:-bottom-6 left-0 text-[10px] sm:text-xs text-red-500 font-medium animate-pulse">
           🎤 Listening...

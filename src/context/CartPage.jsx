@@ -1,7 +1,7 @@
-// src/context/CartPage.jsx
-import React, { useState } from 'react';
-import { useCart } from './CartContext';
-import { useAuth } from './AuthContext';
+// src/pages/CartPage.jsx
+import React, { useState, useEffect } from 'react';
+import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 
 export default function CartPage() {
@@ -20,6 +20,23 @@ export default function CartPage() {
   
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [error, setError] = useState('');
+  const [calculatedTotal, setCalculatedTotal] = useState(0);
+
+  // ✅ টোটাল ক্যালকুলেট (নিশ্চিত)
+  useEffect(() => {
+    const total = cartItems.reduce((sum, item) => {
+      let price = 0;
+      if (typeof item.price === 'string') {
+        const cleaned = item.price.replace(/[^0-9.]/g, '');
+        price = parseFloat(cleaned) || 0;
+      } else {
+        price = Number(item.price) || 0;
+      }
+      const quantity = Number(item.quantity) || 1;
+      return sum + (price * quantity);
+    }, 0);
+    setCalculatedTotal(total);
+  }, [cartItems]);
 
   // Cart খালি থাকলে মেসেজ দেখান
   if (cartItems.length === 0) {
@@ -105,10 +122,16 @@ export default function CartPage() {
 
           {/* Cart Items */}
           {cartItems.map((item) => {
-            const price = typeof item.price === 'string' 
-              ? parseFloat(item.price.replace(/[^0-9.]/g, '')) 
-              : item.price;
-            const itemTotal = price * (item.quantity || 1);
+            // ✅ প্রতি আইটেমের প্রাইস ক্যালকুলেট
+            let itemPrice = 0;
+            if (typeof item.price === 'string') {
+              const cleaned = item.price.replace(/[^0-9.]/g, '');
+              itemPrice = parseFloat(cleaned) || 0;
+            } else {
+              itemPrice = Number(item.price) || 0;
+            }
+            const itemQuantity = Number(item.quantity) || 1;
+            const itemTotal = itemPrice * itemQuantity;
 
             return (
               <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 border-b hover:bg-gray-50 transition">
@@ -139,7 +162,7 @@ export default function CartPage() {
 
                 {/* Price (Desktop) */}
                 <div className="col-span-2 hidden md:flex items-center justify-center font-medium text-gray-700">
-                  ৳{price}
+                  ৳{itemPrice.toFixed(2)}
                 </div>
 
                 {/* Quantity Controls */}
@@ -162,7 +185,7 @@ export default function CartPage() {
 
                 {/* Item Total (Desktop) */}
                 <div className="col-span-1 hidden md:flex items-center justify-center font-bold text-blue-600">
-                  ৳{itemTotal.toFixed(0)}
+                  ৳{itemTotal.toFixed(2)}
                 </div>
 
                 {/* Remove Button */}
@@ -181,11 +204,11 @@ export default function CartPage() {
                 <div className="md:hidden flex justify-between items-center mt-2 pt-2 border-t">
                   <div>
                     <span className="text-sm text-gray-500">Price:</span>
-                    <span className="font-medium ml-1">৳{price}</span>
+                    <span className="font-medium ml-1">৳{itemPrice.toFixed(2)}</span>
                   </div>
                   <div>
                     <span className="text-sm text-gray-500">Total:</span>
-                    <span className="font-bold text-blue-600 ml-1">৳{itemTotal.toFixed(0)}</span>
+                    <span className="font-bold text-blue-600 ml-1">৳{itemTotal.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -208,7 +231,7 @@ export default function CartPage() {
             <div className="text-right w-full md:w-auto">
               <div className="flex justify-between md:justify-end gap-8 text-sm text-gray-600">
                 <span>Subtotal ({totalItems} items):</span>
-                <span>৳{totalPrice.toFixed(0)}</span>
+                <span>৳{calculatedTotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between md:justify-end gap-8 text-sm text-gray-600 mt-1">
                 <span>Shipping:</span>
@@ -216,7 +239,7 @@ export default function CartPage() {
               </div>
               <div className="flex justify-between md:justify-end gap-8 text-xl font-bold text-gray-800 mt-2 pt-2 border-t">
                 <span>Total:</span>
-                <span className="text-blue-600">৳{totalPrice.toFixed(0)}</span>
+                <span className="text-blue-600">৳{calculatedTotal.toFixed(2)}</span>
               </div>
             </div>
           </div>

@@ -4,6 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useOrder } from '../context/OrderContext';
+import { db } from '../firebase';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -42,17 +44,26 @@ export default function PaymentPage() {
 
     // ✅ ফর্ম ভ্যালিডেশন
     if (paymentMethod === 'card') {
-      if (cardNumber.length < 16) {
-        setError('Please enter a valid card number');
+      const cleanCard = cardNumber.replace(/\s/g, '');
+      if (cleanCard.length < 16) {
+        setError('Please enter a valid 16-digit card number');
         return;
       }
       if (cardName.length < 3) {
         setError('Please enter card holder name');
         return;
       }
+      if (cardExpiry.length < 5) {
+        setError('Please enter valid expiry date (MM/YY)');
+        return;
+      }
+      if (cardCvv.length < 3) {
+        setError('Please enter valid CVV');
+        return;
+      }
     } else if (paymentMethod === 'bkash') {
       if (bkashNumber.length < 11) {
-        setError('Please enter a valid bKash number');
+        setError('Please enter a valid bKash number (11 digits)');
         return;
       }
     }
@@ -63,6 +74,10 @@ export default function PaymentPage() {
       // ✅ ১. অর্ডার প্লেস করুন
       const orderId = await placeOrder(cartItems, totalPrice);
       
+      if (!orderId) {
+        throw new Error('Failed to create order');
+      }
+
       // ✅ ২. পেমেন্ট ডেটা তৈরি করুন
       const paymentData = {
         orderId: orderId,
@@ -71,20 +86,41 @@ export default function PaymentPage() {
         status: 'completed',
         customerId: user.uid,
         customerEmail: user.email,
+        customerName: user.displayName || user.email || 'Guest',
+        items: cartItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity || 1
+        })),
         paymentDate: new Date().toISOString(),
         isOffline: !navigator.onLine
       };
 
-      // ✅ ৩. পেমেন্ট সেভ করুন (Offline/Online)
-      const isOnline = navigator.onLine;
-      if (isOnline) {
-        // Online → Firebase-এ সেভ
-        const { db } = await import('../firebase');
-        const { collection, addDoc } = await import('firebase/firestore');
-        await addDoc(collection(db, 'payments'), paymentData);
-        console.log('✅ Payment saved to Firebase');
+      // ✅ ৩. পেমেন্ট সেভ করুন (Firebase Online)
+      if (navigator.onLine) {
+        try {
+          const docRef = await addDoc(collection(db, 'payments'), paymentData);
+          console.log('✅ Payment saved to Firebase with ID:', docRef.id);
+          
+          // ✅ অর্ডার আপডেট করুন (পেমেন্ট ID যোগ করুন)
+          const orderRef = doc(db, 'orders', orderId);
+          await updateDoc(orderRef, {
+            paymentId: docRef.id,
+            paymentStatus: 'completed',
+            paymentMethod: paymentMethod
+          });
+          
+        } catch (firebaseError) {
+          console.error('Firebase error:', firebaseError);
+          // ✅ Firebase এ সেভ না হলে localStorage এ সেভ করুন
+          const pendingPayments = JSON.parse(localStorage.getItem('pendingPayments') || '[]');
+          pendingPayments.push({ ...paymentData, synced: false });
+          localStorage.setItem('pendingPayments', JSON.stringify(pendingPayments));
+          console.log('📦 Payment saved offline (Firebase failed)');
+        }
       } else {
-        // Offline → localStorage-এ সেভ
+        // ✅ Offline → localStorage-এ সেভ
         const pendingPayments = JSON.parse(localStorage.getItem('pendingPayments') || '[]');
         pendingPayments.push({ ...paymentData, synced: false });
         localStorage.setItem('pendingPayments', JSON.stringify(pendingPayments));
@@ -107,7 +143,7 @@ export default function PaymentPage() {
 
     } catch (error) {
       console.error('Payment error:', error);
-      setError('Payment failed: ' + error.message);
+      setError(error.message || 'Payment failed. Please try again.');
       setIsProcessing(false);
     }
   };

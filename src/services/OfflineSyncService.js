@@ -1,161 +1,174 @@
 // src/services/OfflineSyncService.js
 import { db } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, updateDoc } from 'firebase/firestore';
 
 class OfflineSyncService {
   constructor() {
-    this.pendingKey = 'pendingOrders';
-    this.isOnline = navigator.onLine;
+    this.pendingOrders = [];
+    this.isSyncing = false;
     this.syncInterval = null;
+    this.init();
+  }
 
-    // ✅ Online/Offline ইভেন্ট
-    window.addEventListener('online', () => {
-      this.isOnline = true;
-      this.syncPendingOrders();
-    });
-
-    window.addEventListener('offline', () => {
-      this.isOnline = false;
-    });
-
-    // ✅ প্রতি ৩০ সেকেন্ড পর সিঙ্ক
+  init() {
+    // ✅ পেন্ডিং অর্ডার লোড
+    this.loadPendingOrders();
+    
+    // ✅ প্রতি 30 সেকেন্ডে সিঙ্ক চেক
     this.syncInterval = setInterval(() => {
-      if (this.isOnline) {
+      if (navigator.onLine && !this.isSyncing) {
         this.syncPendingOrders();
       }
     }, 30000);
+
+    // ✅ অনলাইন হলে সাথে সাথে সিঙ্ক
+    window.addEventListener('online', () => {
+      console.log('🌐 Online detected, syncing pending orders...');
+      this.syncPendingOrders();
+    });
   }
 
-  // ✅ অর্ডার সেভ করুন
-  async saveOrder(orderData) {
-    console.log('💾 saveOrder called. Online:', this.isOnline);
-    
-    if (this.isOnline) {
-      try {
-        const docRef = await addDoc(collection(db, 'orders'), {
-          ...orderData,
-          status: 'confirmed',
-          syncedAt: new Date().toISOString(),
-          createdAt: new Date()
-        });
-        console.log('✅ Order saved online:', docRef.id);
-        return { id: docRef.id, status: 'confirmed' };
-      } catch (error) {
-        console.error('❌ Error saving order online:', error);
-        return this.saveOrderOffline(orderData);
-      }
-    } else {
-      return this.saveOrderOffline(orderData);
+  // ✅ পেন্ডিং অর্ডার লোড
+  loadPendingOrders() {
+    try {
+      const data = localStorage.getItem('pendingOrders');
+      this.pendingOrders = data ? JSON.parse(data) : [];
+      console.log(`📋 Loaded ${this.pendingOrders.length} pending orders`);
+    } catch (error) {
+      console.error('Error loading pending orders:', error);
+      this.pendingOrders = [];
+    }
+    return this.pendingOrders;
+  }
+
+  // ✅ পেন্ডিং অর্ডার সেভ
+  savePendingOrders() {
+    try {
+      localStorage.setItem('pendingOrders', JSON.stringify(this.pendingOrders));
+    } catch (error) {
+      console.error('Error saving pending orders:', error);
     }
   }
 
-  // ✅ অফলাইনে সেভ
+  // ✅ পেন্ডিং অর্ডার কাউন্ট (✅ নতুন ফাংশন)
+  getPendingCount() {
+    this.loadPendingOrders();
+    return this.pendingOrders.filter(order => !order.synced).length;
+  }
+
+  // ✅ পেন্ডিং অর্ডার পেতে (✅ নতুন ফাংশন)
+  getPendingOrders() {
+    this.loadPendingOrders();
+    return this.pendingOrders.filter(order => !order.synced);
+  }
+
+  // ✅ সব অর্ডার পেতে
+  getAllOrders() {
+    this.loadPendingOrders();
+    return this.pendingOrders;
+  }
+
+  // ✅ অর্ডার অফলাইনে সেভ
   saveOrderOffline(orderData) {
     try {
-      console.log('📦 saveOrderOffline called');
-      const pendingOrders = this.getPendingOrders();
-      const newOrder = {
-        id: `offline_${Date.now()}`,
+      const order = {
         ...orderData,
-        status: 'pending',
+        id: `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         synced: false,
         createdAt: new Date().toISOString()
       };
-      pendingOrders.push(newOrder);
-      localStorage.setItem(this.pendingKey, JSON.stringify(pendingOrders));
-      console.log('📦 Order saved offline:', newOrder.id);
-      console.log('📋 Current pending orders:', pendingOrders);
-      return { id: newOrder.id, status: 'pending' };
+      
+      this.pendingOrders.push(order);
+      this.savePendingOrders();
+      console.log('📦 Order saved offline:', order.id);
+      return order.id;
     } catch (error) {
-      console.error('❌ Error saving order offline:', error);
-      return { id: `offline_${Date.now()}`, status: 'pending' };
+      console.error('Error saving order offline:', error);
+      throw error;
     }
   }
 
-  // ✅ পেন্ডিং অর্ডার লিস্ট
-  getPendingOrders() {
-    try {
-      const data = localStorage.getItem(this.pendingKey);
-      const orders = data ? JSON.parse(data) : [];
-      console.log('📋 getPendingOrders returned:', orders.length, 'orders');
-      return orders;
-    } catch {
-      return [];
-    }
-  }
-
-  // ✅ সব পেন্ডিং অর্ডার সিঙ্ক করুন
+  // ✅ পেন্ডিং অর্ডার সিঙ্ক
   async syncPendingOrders() {
-    if (!this.isOnline) {
-      console.log('⏳ Offline: Sync skipped');
+    if (this.isSyncing) {
+      console.log('⏳ Sync already in progress...');
       return;
     }
 
-    const pendingOrders = this.getPendingOrders();
-    const unsynced = pendingOrders.filter(order => !order.synced);
+    if (!navigator.onLine) {
+      console.log('📡 Offline, skipping sync');
+      return;
+    }
 
-    if (unsynced.length === 0) {
+    this.loadPendingOrders();
+    const pending = this.pendingOrders.filter(order => !order.synced);
+
+    if (pending.length === 0) {
       console.log('✅ No pending orders to sync');
       return;
     }
 
-    console.log(`🔄 Syncing ${unsynced.length} orders...`);
+    console.log(`🔄 Syncing ${pending.length} pending orders...`);
+    this.isSyncing = true;
 
-    for (const order of unsynced) {
+    for (const order of pending) {
       try {
-        // ✅ Order ডেটা সঠিক আছে কিনা চেক করুন
-        console.log('📦 Order data:', order);
+        console.log(`📤 Syncing order: ${order.id}`);
         
-        const docRef = await addDoc(collection(db, 'orders'), {
-          customerId: order.customerId || 'guest',
-          customerEmail: order.customerEmail || 'guest@example.com',
-          customerName: order.customerName || 'Guest',
+        // ✅ Firestore-এ অর্ডার সেভ
+        const orderData = {
+          userId: order.customerId || order.userId,
+          userEmail: order.customerEmail || order.userEmail,
+          userName: order.customerName || order.userName,
           items: order.items || [],
-          totalPrice: order.totalPrice || 0,
-          status: 'confirmed',
+          totalAmount: order.totalPrice || order.totalAmount || 0,
+          status: order.status || 'pending',
+          createdAt: new Date(order.createdAt),
           syncedAt: new Date().toISOString(),
-          createdAt: new Date(order.createdAt || Date.now())
-        });
+          isOffline: true
+        };
 
+        const docRef = await addDoc(collection(db, 'orders'), orderData);
+        console.log(`✅ Order synced with ID: ${docRef.id}`);
+        
+        // ✅ সিঙ্ক成功后 পেন্ডিং থেকে রিমুভ
         order.synced = true;
-        console.log(`✅ Order ${order.id} synced successfully! ID: ${docRef.id}`);
-
+        order.firebaseId = docRef.id;
+        this.savePendingOrders();
+        
       } catch (error) {
         console.error(`❌ Failed to sync order ${order.id}:`, error);
         console.error('Error details:', error.message);
+        
+        // ✅ যদি পারমিশন error হয়, ইউজারকে জানান
+        if (error.message.includes('permissions')) {
+          console.warn('⚠️ Permission error, order will retry later');
+        }
       }
     }
 
-    // ✅ সিঙ্ক করা অর্ডারগুলো আপডেট করুন
-    const updatedOrders = pendingOrders.filter(order => !order.synced);
-    localStorage.setItem(this.pendingKey, JSON.stringify(updatedOrders));
-    
-    console.log(`📋 Remaining pending orders: ${updatedOrders.length}`);
-
-    // ✅ Toast notification
-    const syncedCount = unsynced.length - updatedOrders.length;
-    if (window.showToast && syncedCount > 0) {
-      window.showToast(`✅ ${syncedCount} orders synced successfully!`, 'success');
-    }
-    if (window.showToast && updatedOrders.length > 0) {
-      window.showToast(`❌ ${updatedOrders.length} orders failed to sync`, 'error');
-    }
+    this.isSyncing = false;
+    console.log('✅ Sync completed');
   }
 
-  // ✅ পেন্ডিং কাউন্ট
-  getPendingCount() {
-    return this.getPendingOrders().filter(order => !order.synced).length;
+  // ✅ নির্দিষ্ট অর্ডার রিমুভ
+  removeOrder(orderId) {
+    this.loadPendingOrders();
+    this.pendingOrders = this.pendingOrders.filter(order => order.id !== orderId);
+    this.savePendingOrders();
   }
 
-  // ✅ সিঙ্ক ইন্টারভাল ক্লিয়ার
-  clearSyncInterval() {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-    }
+  // ✅ সিঙ্ক ইন্ডিকেটর রিসেট
+  resetSyncStatus() {
+    this.loadPendingOrders();
+    this.pendingOrders = this.pendingOrders.map(order => ({
+      ...order,
+      synced: false
+    }));
+    this.savePendingOrders();
   }
 }
 
-// ✅ Singleton
-const offlineSync = new OfflineSyncService();
-export default offlineSync;
+// ✅ Singleton instance
+const offlineSyncService = new OfflineSyncService();
+export default offlineSyncService;
