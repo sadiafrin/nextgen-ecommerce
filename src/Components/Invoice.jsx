@@ -1,8 +1,10 @@
 // src/Components/Invoice.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import generateInvoicePDF from '../context/Invoice';
 
 export default function Invoice({ order, onClose }) {
+  const [isDownloading, setIsDownloading] = useState(false);
+
   if (!order) return null;
 
   // টোটাল ক্যালকুলেট
@@ -16,8 +18,29 @@ export default function Invoice({ order, onClose }) {
   const shipping = 60;
   const total = subtotal + tax + shipping;
 
-  const handleDownload = () => {
-    generateInvoicePDF(order);
+  const handleDownload = async () => {
+    console.log('📥 Download button clicked for order:', order.id);
+    setIsDownloading(true);
+    
+    try {
+      if (typeof generateInvoicePDF !== 'function') {
+        throw new Error('generateInvoicePDF function is not available');
+      }
+      
+      console.log('📄 Generating PDF for order:', order.id);
+      const result = generateInvoicePDF(order);
+      
+      if (result) {
+        console.log('✅ PDF downloaded successfully');
+      } else {
+        throw new Error('PDF generation failed');
+      }
+    } catch (error) {
+      console.error('❌ Error downloading PDF:', error);
+      alert('Failed to download PDF. Please try again. Error: ' + error.message);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -36,7 +59,7 @@ export default function Invoice({ order, onClose }) {
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6" id="invoice-content">
           
           {/* Company Info - QuickBuy */}
           <div className="text-center border-b pb-4 mb-4">
@@ -137,9 +160,26 @@ export default function Invoice({ order, onClose }) {
           </button>
           <button
             onClick={handleDownload}
-            className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-2"
+            disabled={isDownloading}
+            className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${
+              isDownloading 
+                ? 'bg-gray-400 text-white cursor-not-allowed' 
+                : 'bg-orange-500 text-white hover:bg-orange-600'
+            }`}
           >
-            ⬇️ Download PDF
+            {isDownloading ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Downloading...
+              </>
+            ) : (
+              <>
+                ⬇️ Download PDF
+              </>
+            )}
           </button>
         </div>
       </div>
