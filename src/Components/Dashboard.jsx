@@ -2,14 +2,141 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import SearchBar from './searchbar';
 import ProductGrid from './ProductGrid';
+import { Link } from 'react-router-dom';
+
+// ✅ ক্যাটাগরি ডেটা (প্রতিটি ক্যাটাগরির জন্য ৪টি আলাদা ইমেজ)
+const categoriesData = [
+  { 
+    id: 'electronics', 
+    name: '📱 Electronics', 
+    icon: '📱',
+    images: [
+      "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1525547719571-a2d4ac8945e2?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Smartphones, Laptops, Cameras, TVs, Headphones' 
+  },
+  { 
+    id: 'fashion', 
+    name: '👗 Fashion', 
+    icon: '👗',
+    images: [
+      "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1445205170230-053b83016050?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Clothing, Shoes, Bags, Watches, Jewelry' 
+  },
+  { 
+    id: 'home-living', 
+    name: '🏠 Home & Living', 
+    icon: '🏠',
+    images: [
+      "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1618220179428-22790b461013?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1616137466211-f939a420be84?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Furniture, Bedding, Curtains, Lighting, Decor' 
+  },
+  { 
+    id: 'kitchen', 
+    name: '🍳 Kitchen', 
+    icon: '🍳',
+    images: [
+      "https://images.unsplash.com/photo-1556911220-bff31c812dba?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1585543805890-6051f7823f7c?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1600489000022-c2086d79f9d4?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Blenders, Ovens, Refrigerators, Cookware' 
+  },
+  { 
+    id: 'groceries', 
+    name: '🛒 Groceries', 
+    icon: '🛒',
+    images: [
+      "https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1579113800032-c38bd7635818?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1561043433-aaf687c4cf5f?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1543362906-acf16b3bb18d?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Rice, Pulses, Oils, Snacks, Spices, Toiletries' 
+  },
+  { 
+    id: 'beauty', 
+    name: '💄 Beauty', 
+    icon: '💄',
+    images: [
+      "https://images.unsplash.com/photo-1596462502278-5a07e0b9fbc5?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1556228578-0c85b1d34910?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1559599238-308793637427?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Makeup, Skincare, Haircare, Perfumes, Grooming' 
+  },
+  { 
+    id: 'baby', 
+    name: '👶 Baby', 
+    icon: '👶',
+    images: [
+      "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Diapers, Baby Food, Toys, Baby Clothing, Strollers' 
+  },
+  { 
+    id: 'sports', 
+    name: '⚽ Sports', 
+    icon: '⚽',
+    images: [
+      "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1511882150382-421056c89033?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1517466787929-bc90951d0974?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Fitness Equipment, Bicycles, Sports Gear, Bags' 
+  },
+  { 
+    id: 'books', 
+    name: '📚 Books', 
+    icon: '📚',
+    images: [
+      "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1506880018603-83d5b814b5a6?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Fiction, Non-fiction, Notebooks, Pens, Art Supplies' 
+  },
+  { 
+    id: 'automotive', 
+    name: '🚗 Automotive', 
+    icon: '🚗',
+    images: [
+      "https://images.unsplash.com/photo-1535982330050-f1c2fb79ff78?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1485291571150-772bcfc10da5?w=400&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=400&h=300&fit=crop&auto=format"
+    ],
+    description: 'Helmets, Car/Bike Parts, Engine Oils, Accessories' 
+  }
+];
 
 export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const productsPerPage = 12;
 
+  // ✅ ক্যাটাগরি অনুযায়ী প্রোডাক্ট তৈরি
   const categories = ['shoes', 'watch', 'handbag', 'laptop', 'camera', 'perfume', 'sneakers'];
   
   const productImages = {
@@ -54,18 +181,83 @@ export default function Dashboard() {
       "https://images.unsplash.com/photo-1560769629-975ec94e6a86?w=300&h=300&fit=crop&auto=format",
       "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=300&h=300&fit=crop&auto=format",
       "https://images.unsplash.com/photo-1560769629-975ec94e6a86?w=300&h=300&fit=crop&auto=format"
+    ],
+    // ✅ নতুন ক্যাটাগরি ইমেজ
+    electronics: [
+      "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1525547719571-a2d4ac8945e2?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=300&h=300&fit=crop&auto=format"
+    ],
+    fashion: [
+      "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1445205170230-053b83016050?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=300&h=300&fit=crop&auto=format"
+    ],
+    'home-living': [
+      "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1618220179428-22790b461013?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1616137466211-f939a420be84?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=300&h=300&fit=crop&auto=format"
+    ],
+    kitchen: [
+      "https://images.unsplash.com/photo-1556911220-bff31c812dba?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1585543805890-6051f7823f7c?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1600489000022-c2086d79f9d4?w=300&h=300&fit=crop&auto=format"
+    ],
+    groceries: [
+      "https://images.unsplash.com/photo-1542838132-92c53300491e?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1579113800032-c38bd7635818?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1561043433-aaf687c4cf5f?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1543362906-acf16b3bb18d?w=300&h=300&fit=crop&auto=format"
+    ],
+    beauty: [
+      "https://images.unsplash.com/photo-1596462502278-5a07e0b9fbc5?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1556228578-0c85b1d34910?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1559599238-308793637427?w=300&h=300&fit=crop&auto=format"
+    ],
+    baby: [
+      "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1522771930-78848d9293e8?w=300&h=300&fit=crop&auto=format"
+    ],
+    sports: [
+      "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1511882150382-421056c89033?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1517466787929-bc90951d0974?w=300&h=300&fit=crop&auto=format"
+    ],
+    books: [
+      "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1506880018603-83d5b814b5a6?w=300&h=300&fit=crop&auto=format"
+    ],
+    automotive: [
+      "https://images.unsplash.com/photo-1535982330050-f1c2fb79ff78?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1485291571150-772bcfc10da5?w=300&h=300&fit=crop&auto=format",
+      "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=300&h=300&fit=crop&auto=format"
     ]
   };
+
+  // ✅ সব ক্যাটাগরি আইডি
+  const allCategoryIds = ['shoes', 'watch', 'handbag', 'laptop', 'camera', 'perfume', 'sneakers', 
+    'electronics', 'fashion', 'home-living', 'kitchen', 'groceries', 'beauty', 'baby', 'sports', 'books', 'automotive'];
 
   // ✅ সব প্রোডাক্ট তৈরি - useMemo দিয়ে memoized
   const allProducts = useMemo(() => {
     const products = [];
-    categories.forEach(category => {
+    allCategoryIds.forEach(category => {
       const images = productImages[category] || [];
       for (let i = 0; i < 4; i++) {
         products.push({
           id: `${category}-${i + 1}`,
-          name: `${category.charAt(0).toUpperCase() + category.slice(1)} Style ${i + 1}`,
+          name: `${category.charAt(0).toUpperCase() + category.slice(1).replace('-', ' ')} Style ${i + 1}`,
           price: `৳${Math.floor(Math.random() * 5000) + 500}`,
           stock: i % 2 === 0 ? "In Stock" : "Out of Stock",
           image: images[i % images.length] || 'https://via.placeholder.com/300x300?text=No+Image',
@@ -99,19 +291,29 @@ export default function Dashboard() {
     return () => clearTimeout(timer);
   }, []);
 
-  // ✅ ফিল্টার প্রোডাক্ট - useMemo দিয়ে memoized
+  // ✅ ফিল্টার প্রোডাক্ট - সার্চ + ক্যাটাগরি
   const filteredProducts = useMemo(() => {
-    if (!searchQuery || searchQuery.trim() === '') {
-      return allProducts;
+    let result = allProducts;
+    
+    // Search Filter
+    if (searchQuery && searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(product => {
+        const nameMatch = product.name.toLowerCase().includes(query);
+        const categoryMatch = product.category.toLowerCase().includes(query);
+        return nameMatch || categoryMatch;
+      });
     }
     
-    const query = searchQuery.toLowerCase().trim();
-    return allProducts.filter(product => {
-      const nameMatch = product.name.toLowerCase().includes(query);
-      const categoryMatch = product.category.toLowerCase().includes(query);
-      return nameMatch || categoryMatch;
-    });
-  }, [allProducts, searchQuery]);
+    // ✅ Category Filter
+    if (selectedCategory) {
+      result = result.filter(product => 
+        product.category.toLowerCase() === selectedCategory.toLowerCase()
+      );
+    }
+    
+    return result;
+  }, [allProducts, searchQuery, selectedCategory]);
 
   const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
   
@@ -128,6 +330,12 @@ export default function Dashboard() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // ✅ Category Select Handler
+  const handleCategorySelect = (categoryId) => {
+    setSelectedCategory(selectedCategory === categoryId ? null : categoryId);
+    setCurrentPage(1);
+  };
+
   // ✅ Offline Status Badge
   const OfflineBadge = () => {
     if (isOnline) return null;
@@ -137,6 +345,12 @@ export default function Dashboard() {
         <span className="text-xs sm:text-sm font-medium">Offline Mode</span>
       </div>
     );
+  };
+
+  // ✅ Get category image
+  const getCategoryImage = (categoryId) => {
+    const cat = categoriesData.find(c => c.id === categoryId);
+    return cat?.images?.[0] || 'https://via.placeholder.com/400x300?text=Category';
   };
 
   return (
@@ -275,13 +489,75 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Products Section */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8">
+      {/* ===== CATEGORIES SECTION ===== */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div>
-            <h2 className="text-base sm:text-lg md:text-2xl font-bold text-gray-800">🔥 Trending Products</h2>
+            <h2 className="text-base sm:text-lg md:text-2xl font-bold text-gray-800">📂 Shop by Category</h2>
+            <p className="text-xs sm:text-sm text-gray-500">Browse products by category</p>
+          </div>
+          {selectedCategory && (
+            <button 
+              onClick={() => setSelectedCategory(null)}
+              className="text-xs sm:text-sm text-orange-500 hover:text-orange-600 font-medium"
+            >
+              ✕ Clear Filter
+            </button>
+          )}
+        </div>
+
+        {/* Categories Grid - 4 Images per category */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          {categoriesData.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => handleCategorySelect(cat.id)}
+              className={`group relative overflow-hidden rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 ${
+                selectedCategory === cat.id 
+                  ? 'ring-2 ring-orange-500 ring-offset-2' 
+                  : ''
+              }`}
+            >
+              <div className="relative h-32 sm:h-36 md:h-40">
+                <img 
+                  src={cat.images[0]} 
+                  alt={cat.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
+                <div className="absolute bottom-2 left-2 right-2 text-white">
+                  <p className="text-sm sm:text-base font-bold">{cat.icon} {cat.name}</p>
+                  <p className="text-[10px] sm:text-xs text-white/80 truncate">{cat.description}</p>
+                </div>
+                {selectedCategory === cat.id && (
+                  <div className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] sm:text-xs px-2 py-0.5 rounded-full">
+                    Selected
+                  </div>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Products Section */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 pb-6 sm:pb-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <div>
+            <h2 className="text-base sm:text-lg md:text-2xl font-bold text-gray-800">
+              {selectedCategory 
+                ? `📦 ${categoriesData.find(c => c.id === selectedCategory)?.name || 'Products'}`
+                : '🔥 All Products'
+              }
+            </h2>
             <p className="text-xs sm:text-sm text-gray-500">
-              {searchQuery ? `Showing results for "${searchQuery}"` : 'Browse our most popular items'}
+              {searchQuery 
+                ? `Showing results for "${searchQuery}"` 
+                : selectedCategory 
+                  ? `Showing ${filteredProducts.length} products`
+                  : `Showing ${filteredProducts.length} products`
+              }
             </p>
           </div>
           <div className="w-full sm:w-auto">
