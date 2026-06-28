@@ -3,13 +3,14 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { db, storage } from "../firebase";
 import { 
-  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, where 
+  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, where,
+  onSnapshot 
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { useLocation } from "react-router-dom";
 
 export default function AdminDashboard() {
-  const { user, isAdmin, loadAdminStats, loadAllUsers } = useAuth();
+  const { user, isAdmin, loadAllUsers } = useAuth();
   const location = useLocation();
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -27,14 +28,27 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('idle');
-  const [stats, setStats] = useState({
+  const [realTimeStatus, setRealTimeStatus] = useState('🟢 Live');
+  const [isStatsSyncing, setIsStatsSyncing] = useState(false);
+  
+  // ✅ Firebase Stats (Real-time from Firebase)
+  const [firebaseStats, setFirebaseStats] = useState({
     newCustomers: 0,
     totalOrders: 0,
-    monthlySales: 0,
-    totalLogins: 0,
     totalRevenue: 0,
     pendingOrders: 0,
-    completedOrders: 0
+    completedOrders: 0,
+    totalLogins: 0,
+    monthlySales: 0,
+    lastUpdated: null
+  });
+
+  // ✅ Offline Stats (from localStorage)
+  const [offlineStats, setOfflineStats] = useState({
+    pendingUsers: 0,
+    offlineLogins: 0,
+    offlineOrders: 0,
+    offlineRevenue: 0
   });
 
   const [formData, setFormData] = useState({
@@ -54,49 +68,36 @@ export default function AdminDashboard() {
     if (tab) setActiveTab(tab);
   }, [location.search]);
 
-  // ✅ পেন্ডিং ইউজার লোড (localStorage)
-  const loadPendingUsers = () => {
-    try {
-      const data = localStorage.getItem('pendingUsers');
-      setPendingUsers(data ? JSON.parse(data) : []);
-    } catch { setPendingUsers([]); }
-  };
-
-  // ✅ অফলাইন লগইন লোড (localStorage)
-  const loadOfflineLogins = () => {
-    try {
-      const data = localStorage.getItem('offlineLogins');
-      setOfflineLogins(data ? JSON.parse(data) : []);
-    } catch { setOfflineLogins([]); }
-  };
-
-  // ✅ অফলাইন অর্ডার লোড (localStorage)
-  const loadOfflineOrders = () => {
-    try {
-      const data = localStorage.getItem('pendingOrders');
-      setOfflineOrders(data ? JSON.parse(data) : []);
-    } catch { setOfflineOrders([]); }
-  };
-
-  // ✅ কন্টাক্ট মেসেজ লোড (localStorage)
-  const loadContactMessages = () => {
-    try {
-      const data = localStorage.getItem('contactMessages');
-      setContactMessages(data ? JSON.parse(data) : []);
-    } catch { setContactMessages([]); }
-  };
-
-  // ✅ Offline Stats Refresh
-  const refreshOfflineStats = useCallback(() => {
+  // ✅ Offline Data Load from localStorage
+  const loadOfflineData = useCallback(() => {
     try {
       const p = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
-      const l = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
-      const o = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
       setPendingUsers(p);
+      
+      const l = JSON.parse(localStorage.getItem('offlineLogins') || '[]');
       setOfflineLogins(l);
+      
+      const o = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
       setOfflineOrders(o);
+      
+      const m = JSON.parse(localStorage.getItem('contactMessages') || '[]');
+      setContactMessages(m);
+      
+      const offlineRevenue = o.reduce((sum, order) => {
+        const totalPrice = order.totalPrice || order.total || 0;
+        return sum + (typeof totalPrice === 'number' ? totalPrice : 0);
+      }, 0);
+      
+      setOfflineStats({
+        pendingUsers: p.length,
+        offlineLogins: l.length,
+        offlineOrders: o.length,
+        offlineRevenue: offlineRevenue
+      });
+      
+      console.log('📦 Offline Data Loaded:', { p: p.length, l: l.length, o: o.length });
     } catch (e) {
-      console.error('Error loading offline stats:', e);
+      console.error('Error loading offline data:', e);
     }
   }, []);
 
@@ -175,8 +176,7 @@ export default function AdminDashboard() {
         localStorage.removeItem('offlineLogins');
       }
 
-      await loadData();
-      refreshOfflineStats();
+      loadOfflineData();
       
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus('idle'), 3000);
@@ -196,56 +196,202 @@ export default function AdminDashboard() {
     }
   };
 
-  // ✅ Firebase থেকে সব ডেটা লোড
-  const loadData = async () => {
-    setLoading(true);
+  // ✅ Manual Stats Sync Function - FIXED (Conflict Free)
+  const syncStatsManually = async () => {
+    if (isStatsSyncing) return;
+    
+    setIsStatsSyncing(true);
+    setRealTimeStatus('🔄 Syncing Stats...');
+    
     try {
-      const productsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"));
-      const productsSnapshot = await getDocs(productsQuery);
-      setProducts(productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-      const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+      console.log('📊 Starting manual stats sync...');
+      
+      // 1️⃣ সব অর্ডার লোড করুন
+      const ordersQuery = query(collection(db, "orders"));
       const ordersSnapshot = await getDocs(ordersQuery);
       const allOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setOrders(allOrders);
-      setSyncedOrders(allOrders);
-
-      const usersList = await loadAllUsers();
-      setUsers(usersList);
-
-      const statsData = await loadAdminStats();
       
+      // 2️⃣ Calculate Stats
       const totalOrders = allOrders.length;
-      const pending = allOrders.filter(o => o.status === 'pending' || o.status === 'Pending').length;
-      const completed = allOrders.filter(o => o.status === 'completed' || o.status === 'Completed' || o.status === 'delivered' || o.status === 'Delivered').length;
       const revenue = allOrders.reduce((sum, order) => {
         const totalPrice = order.totalPrice || order.total || 0;
         return sum + (typeof totalPrice === 'number' ? totalPrice : 0);
       }, 0);
-
-      setStats({
-        newCustomers: statsData.newCustomers || 0,
+      const pending = allOrders.filter(o => o.status === 'pending' || o.status === 'Pending').length;
+      const completed = allOrders.filter(o => o.status === 'completed' || o.status === 'Completed' || o.status === 'delivered' || o.status === 'Delivered').length;
+      
+      // 3️⃣ Users Count
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      const newCustomers = usersSnapshot.docs.length;
+      
+      console.log('📊 Calculated Stats:', { totalOrders, revenue, pending, completed, newCustomers });
+      
+      // 4️⃣ Update Stats in Firebase using updateDoc (not setDoc)
+      const statsRef = doc(db, "adminStats", "stats");
+      const currentDate = new Date().toISOString();
+      
+      await updateDoc(statsRef, {
         totalOrders: totalOrders,
-        monthlySales: statsData.monthlySales || 0,
-        totalLogins: statsData.totalLogins || 0,
-        totalRevenue: revenue,
+        monthlySales: revenue,
+        newCustomers: newCustomers,
+        totalLogins: totalOrders,
+        lastUpdated: currentDate,
         pendingOrders: pending,
         completedOrders: completed
       });
-
-      refreshOfflineStats();
-      loadContactMessages();
-
+      
+      console.log('✅ Stats updated in Firebase at:', currentDate);
+      
+      // 5️⃣ Immediately update local state (without waiting for onSnapshot)
+      setFirebaseStats(prev => ({
+        ...prev,
+        totalOrders: totalOrders,
+        totalRevenue: revenue,
+        pendingOrders: pending,
+        completedOrders: completed,
+        newCustomers: newCustomers,
+        monthlySales: revenue,
+        lastUpdated: currentDate
+      }));
+      
+      // 6️⃣ Update offline stats
+      loadOfflineData();
+      
+      setRealTimeStatus('🟢 Live');
+      alert(`✅ Stats synced successfully!\n\nTotal Orders: ${totalOrders}\nTotal Revenue: ৳${revenue.toLocaleString()}\nPending Orders: ${pending}\nNew Customers: ${newCustomers}`);
+      
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error('❌ Error syncing stats:', error);
+      setRealTimeStatus('🔴 Error');
+      alert('❌ Failed to sync stats: ' + error.message);
+    } finally {
+      setIsStatsSyncing(false);
     }
-    setLoading(false);
   };
+
+  // ✅ Firebase Real-time Data Load
+  useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setRealTimeStatus('🔄 Connecting...');
+
+    // 1️⃣ Products - Real-time
+    const productsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"));
+    const unsubscribeProducts = onSnapshot(productsQuery, (snapshot) => {
+      const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProducts(productsData);
+      console.log('🔄 Products updated:', productsData.length);
+    }, (error) => {
+      console.error('❌ Products error:', error);
+    });
+
+    // 2️⃣ Orders - Real-time (Firebase Orders)
+    const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+    const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setOrders(ordersData);
+      setSyncedOrders(ordersData);
+      
+      const totalOrders = ordersData.length;
+      const pending = ordersData.filter(o => o.status === 'pending' || o.status === 'Pending').length;
+      const completed = ordersData.filter(o => o.status === 'completed' || o.status === 'Completed' || o.status === 'delivered' || o.status === 'Delivered').length;
+      const revenue = ordersData.reduce((sum, order) => {
+        const totalPrice = order.totalPrice || order.total || 0;
+        return sum + (typeof totalPrice === 'number' ? totalPrice : 0);
+      }, 0);
+
+      setFirebaseStats(prev => ({
+        ...prev,
+        totalOrders: totalOrders,
+        totalRevenue: revenue,
+        pendingOrders: pending,
+        completedOrders: completed
+      }));
+      
+      console.log('🔄 Firebase Orders updated:', { totalOrders, pending, completed, revenue });
+      setRealTimeStatus('🟢 Live');
+    }, (error) => {
+      console.error('❌ Orders error:', error);
+      setRealTimeStatus('🔴 Offline');
+    });
+
+    // 3️⃣ Users - Real-time
+    const usersQuery = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    const unsubscribeUsers = onSnapshot(usersQuery, async (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(usersData);
+      
+      const newCustomers = usersData.filter(u => u.isNewCustomer === true || u.createdAt).length;
+      setFirebaseStats(prev => ({
+        ...prev,
+        newCustomers: newCustomers
+      }));
+      
+      console.log('🔄 Users updated:', usersData.length);
+    }, (error) => {
+      console.error('❌ Users error:', error);
+    });
+
+    // 4️⃣ Admin Stats - Real-time (with conflict avoidance)
+    const statsRef = doc(db, "adminStats", "stats");
+    const unsubscribeStats = onSnapshot(statsRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        // ✅ Check if this is a recent manual update (avoid conflict)
+        const lastUpdated = data.lastUpdated ? new Date(data.lastUpdated) : null;
+        const now = new Date();
+        const diffMs = lastUpdated ? now - lastUpdated : Infinity;
+        const diffSec = diffMs / 1000;
+        
+        // ✅ If updated within last 2 seconds, skip (manual update already applied)
+        if (diffSec < 2 && isStatsSyncing) {
+          console.log('⏳ Skipping recent update (manual sync in progress)');
+          return;
+        }
+        
+        setFirebaseStats(prev => ({
+          ...prev,
+          monthlySales: data.monthlySales || 0,
+          totalLogins: data.totalLogins || 0,
+          newCustomers: data.newCustomers || prev.newCustomers,
+          totalOrders: data.totalOrders || prev.totalOrders,
+          totalRevenue: data.monthlySales || prev.totalRevenue,
+          pendingOrders: data.pendingOrders || prev.pendingOrders,
+          completedOrders: data.completedOrders || prev.completedOrders,
+          lastUpdated: data.lastUpdated || null
+        }));
+        console.log('🔄 Firebase Stats updated from listener:', data);
+      }
+    }, (error) => {
+      console.error('❌ Stats error:', error);
+    });
+
+    // 5️⃣ Load Offline Data
+    loadOfflineData();
+
+    setLoading(false);
+    setRealTimeStatus('🟢 Live');
+
+    return () => {
+      unsubscribeProducts();
+      unsubscribeOrders();
+      unsubscribeUsers();
+      unsubscribeStats();
+      console.log('🔄 All real-time listeners cleaned up');
+    };
+  }, [isAdmin, loadOfflineData, isStatsSyncing]);
 
   // ✅ Auto Sync on Online
   useEffect(() => {
     const handleOnline = () => {
       if (navigator.onLine) {
+        console.log('🌐 Online detected!');
+        setRealTimeStatus('🟢 Live');
         const totalOffline = 
           JSON.parse(localStorage.getItem('pendingUsers') || '[]').length +
           JSON.parse(localStorage.getItem('pendingOrders') || '[]').length +
@@ -254,16 +400,26 @@ export default function AdminDashboard() {
         if (totalOffline > 0) {
           syncOfflineData();
         }
+      } else {
+        setRealTimeStatus('🔴 Offline');
       }
     };
 
     window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
+    window.addEventListener('offline', () => setRealTimeStatus('🔴 Offline'));
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', () => setRealTimeStatus('🔴 Offline'));
+    };
   }, []);
 
-  useEffect(() => {
-    if (isAdmin) loadData();
-  }, [isAdmin]);
+  // ✅ Manual Refresh
+  const handleRefresh = useCallback(() => {
+    setRealTimeStatus('🔄 Refreshing...');
+    loadOfflineData();
+    setTimeout(() => setRealTimeStatus('🟢 Live'), 1000);
+  }, [loadOfflineData]);
 
   // ✅ ইমেজ আপলোড ফাংশন
   const uploadImage = async (file) => {
@@ -301,7 +457,6 @@ export default function AdminDashboard() {
 
       await addDoc(collection(db, "products"), productData);
       resetForm();
-      await loadData();
       alert("✅ Product added successfully!");
     } catch (error) {
       console.error('Error adding product:', error);
@@ -329,7 +484,6 @@ export default function AdminDashboard() {
       });
       
       resetForm();
-      await loadData();
       alert("✅ Product updated successfully!");
     } catch (error) {
       console.error("Error updating product:", error);
@@ -346,7 +500,6 @@ export default function AdminDashboard() {
         await deleteObject(imageRef).catch(() => {});
       }
       await deleteDoc(doc(db, "products", id));
-      await loadData();
       alert("✅ Product deleted successfully!");
     } catch (error) {
       console.error("Error deleting product:", error);
@@ -358,8 +511,10 @@ export default function AdminDashboard() {
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
       const orderRef = doc(db, "orders", orderId);
-      await updateDoc(orderRef, { status: newStatus });
-      await loadData();
+      await updateDoc(orderRef, { 
+        status: newStatus,
+        updatedAt: new Date()
+      });
       alert("✅ Order status updated!");
     } catch (error) {
       console.error("Error updating order:", error);
@@ -372,7 +527,6 @@ export default function AdminDashboard() {
     if (!confirm("Are you sure you want to delete this order?")) return;
     try {
       await deleteDoc(doc(db, "orders", orderId));
-      await loadData();
       alert("✅ Order deleted successfully!");
     } catch (error) {
       console.error("Error deleting order:", error);
@@ -425,9 +579,9 @@ export default function AdminDashboard() {
     return <div className="p-6 text-red-500 font-bold text-center text-lg">Access Denied! Admin only.</div>;
   }
 
-  // ✅ Offline Stats Cards Component - Fully Responsive
+  // ✅ Offline Stats Cards Component
   const OfflineStatsCards = () => {
-    const totalOffline = pendingUsers.length + offlineLogins.length + offlineOrders.length;
+    const totalOffline = offlineStats.pendingUsers + offlineStats.offlineLogins + offlineStats.offlineOrders;
 
     return (
       <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
@@ -470,9 +624,9 @@ export default function AdminDashboard() {
                 <p className="text-[10px] sm:text-xs text-gray-500">Users who registered offline</p>
               </div>
               <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-sm sm:text-lg font-bold ${
-                pendingUsers.length > 0 ? "bg-yellow-500 text-white animate-pulse" : "bg-green-100 text-green-700"
+                offlineStats.pendingUsers > 0 ? "bg-yellow-500 text-white animate-pulse" : "bg-green-100 text-green-700"
               }`}>
-                {pendingUsers.length}
+                {offlineStats.pendingUsers}
               </span>
             </div>
           </div>
@@ -485,9 +639,9 @@ export default function AdminDashboard() {
                 <p className="text-[10px] sm:text-xs text-gray-500">Users who logged in offline</p>
               </div>
               <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-sm sm:text-lg font-bold ${
-                offlineLogins.length > 0 ? "bg-blue-500 text-white animate-pulse" : "bg-green-100 text-green-700"
+                offlineStats.offlineLogins > 0 ? "bg-blue-500 text-white animate-pulse" : "bg-green-100 text-green-700"
               }`}>
-                {offlineLogins.length}
+                {offlineStats.offlineLogins}
               </span>
             </div>
           </div>
@@ -500,9 +654,9 @@ export default function AdminDashboard() {
                 <p className="text-[10px] sm:text-xs text-gray-500">Orders placed offline</p>
               </div>
               <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-sm sm:text-lg font-bold ${
-                offlineOrders.length > 0 ? "bg-purple-500 text-white animate-pulse" : "bg-green-100 text-green-700"
+                offlineStats.offlineOrders > 0 ? "bg-purple-500 text-white animate-pulse" : "bg-green-100 text-green-700"
               }`}>
-                {offlineOrders.length}
+                {offlineStats.offlineOrders}
               </span>
             </div>
           </div>
@@ -511,56 +665,76 @@ export default function AdminDashboard() {
     );
   };
 
-  // ✅ Stats Cards - বড় + ক্লিয়ার (আপডেটেড)
-  const StatsCards = () => (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
-      
-      {/* New Customers */}
-      <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-blue-500 hover:shadow-lg transition">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">New Customers</p>
-            <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-blue-600 mt-1">{stats.newCustomers}</p>
+  // ✅ Stats Cards - Firebase Stats ONLY
+  const StatsCards = () => {
+    const totalRevenue = firebaseStats.totalRevenue || 0;
+    const lastUpdated = firebaseStats.lastUpdated 
+      ? new Date(firebaseStats.lastUpdated).toLocaleString() 
+      : 'N/A';
+    
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        
+        {/* New Customers - Firebase */}
+        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-blue-500 hover:shadow-lg transition">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">New Customers</p>
+              <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-blue-600 mt-1">{firebaseStats.newCustomers}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
+            </div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">👤</div>
           </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">👤</div>
         </div>
-      </div>
 
-      {/* Total Orders */}
-      <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-green-500 hover:shadow-lg transition">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Orders</p>
-            <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-green-600 mt-1">{stats.totalOrders}</p>
+        {/* Total Orders - Firebase */}
+        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-green-500 hover:shadow-lg transition">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Orders</p>
+              <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-green-600 mt-1">{firebaseStats.totalOrders}</p>
+              {offlineStats.offlineOrders > 0 && (
+                <p className="text-xs text-yellow-600 mt-0.5">+ {offlineStats.offlineOrders} offline pending</p>
+              )}
+              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
+            </div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">📋</div>
           </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">📋</div>
         </div>
-      </div>
 
-      {/* Total Revenue */}
-      <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-purple-500 hover:shadow-lg transition">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</p>
-            <p className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-purple-600 mt-1">৳{stats.totalRevenue.toLocaleString()}</p>
+        {/* Total Revenue - Firebase */}
+        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-purple-500 hover:shadow-lg transition">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</p>
+              <p className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-purple-600 mt-1">৳{totalRevenue.toLocaleString()}</p>
+              {offlineStats.offlineRevenue > 0 && (
+                <p className="text-xs text-yellow-600 mt-0.5">+ ৳{offlineStats.offlineRevenue.toLocaleString()} offline</p>
+              )}
+              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
+            </div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">💰</div>
           </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">💰</div>
         </div>
-      </div>
 
-      {/* Pending Orders */}
-      <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-orange-500 hover:shadow-lg transition">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Pending Orders</p>
-            <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-orange-600 mt-1">{stats.pendingOrders}</p>
+        {/* Pending Orders - Firebase */}
+        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-orange-500 hover:shadow-lg transition">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Pending Orders</p>
+              <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-orange-600 mt-1">{firebaseStats.pendingOrders}</p>
+              {offlineStats.offlineOrders > 0 && (
+                <p className="text-xs text-yellow-600 mt-0.5">+ {offlineStats.offlineOrders} offline</p>
+              )}
+              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
+            </div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">⏳</div>
           </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">⏳</div>
         </div>
-      </div>
 
-    </div>
-  );
+      </div>
+    );
+  };
 
   // ✅ Messages Tab
   const MessagesTab = () => {
@@ -629,17 +803,43 @@ export default function AdminDashboard() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800">⚡ Admin Dashboard</h1>
-            <p className="text-xs sm:text-sm text-gray-500">Welcome back, {user?.name || "Admin"}!</p>
+            <p className="text-xs sm:text-sm text-gray-500">
+              Welcome back, {user?.name || "Admin"}! 
+              <span className={`ml-2 inline-flex items-center gap-1 ${
+                realTimeStatus === '🟢 Live' ? 'text-green-600' : 
+                realTimeStatus === '🔴 Offline' ? 'text-red-600' : 'text-yellow-600'
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full inline-block bg-current animate-pulse"></span>
+                {realTimeStatus}
+              </span>
+            </p>
+            {firebaseStats.lastUpdated && (
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Last Updated: {new Date(firebaseStats.lastUpdated).toLocaleString()}
+              </p>
+            )}
           </div>
-          <button onClick={loadData} className="w-full sm:w-auto bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition text-xs sm:text-sm">
-            🔄 Refresh All
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button 
+              onClick={syncStatsManually}
+              disabled={isStatsSyncing}
+              className="w-full sm:w-auto bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition text-xs sm:text-sm flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              {isStatsSyncing ? '⏳ Syncing...' : '📊 Sync Stats'}
+            </button>
+            <button 
+              onClick={handleRefresh} 
+              className="w-full sm:w-auto bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition text-xs sm:text-sm flex items-center justify-center gap-1"
+            >
+              🔄 Refresh
+            </button>
+          </div>
         </div>
 
         <OfflineStatsCards />
         <StatsCards />
 
-        {/* Tabs - Fully Responsive */}
+        {/* Tabs */}
         <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6 flex-wrap">
           <button onClick={() => setActiveTab("overview")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "overview" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📊 Overview</button>
           <button onClick={() => setActiveTab("products")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "products" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📦 Products</button>
@@ -889,7 +1089,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <h2 className="text-sm sm:text-base md:text-lg font-bold">📦 Offline Registered Users ({pendingUsers.length})</h2>
-              <button onClick={refreshOfflineStats} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+              <button onClick={loadOfflineData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {pendingUsers.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">✅ No offline registered users.</div>
@@ -930,7 +1130,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <h2 className="text-sm sm:text-base md:text-lg font-bold">📱 Offline Logins ({offlineLogins.length})</h2>
-              <button onClick={refreshOfflineStats} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+              <button onClick={loadOfflineData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {offlineLogins.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">✅ No offline logins recorded.</div>
@@ -973,7 +1173,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <h2 className="text-sm sm:text-base md:text-lg font-bold">📋 Offline Orders ({offlineOrders.length})</h2>
-              <button onClick={refreshOfflineStats} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+              <button onClick={loadOfflineData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {offlineOrders.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">✅ No offline orders found.</div>
@@ -1018,7 +1218,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <h2 className="text-sm sm:text-base md:text-lg font-bold">✅ Synced Orders ({syncedOrders.length})</h2>
-              <button onClick={loadData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+              <button onClick={handleRefresh} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
             </div>
             {loading ? (
               <div className="p-6 text-center text-gray-500 text-sm">Loading orders...</div>

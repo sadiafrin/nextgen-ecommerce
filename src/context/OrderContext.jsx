@@ -3,7 +3,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { db } from '../firebase';
 import { 
   collection, addDoc, getDocs, query, where, orderBy, 
-  doc, getDoc, updateDoc, setDoc, increment, deleteDoc 
+  doc, getDoc, updateDoc, setDoc, increment, deleteDoc,
+  serverTimestamp 
 } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 
@@ -95,6 +96,59 @@ export function OrderProvider({ children }) {
     }
   }, []);
 
+  // ✅ Stats Update Function with lastUpdated
+  const updateStats = useCallback(async (totalAmount, isNewCustomer = false) => {
+    try {
+      const statsRef = doc(db, 'adminStats', 'stats');
+      const statsSnap = await getDoc(statsRef);
+      
+      const currentDate = new Date().toISOString();
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      if (statsSnap.exists()) {
+        const existingData = statsSnap.data();
+        const existingMonth = existingData.lastUpdated 
+          ? new Date(existingData.lastUpdated).getMonth() 
+          : -1;
+        const existingYear = existingData.lastUpdated 
+          ? new Date(existingData.lastUpdated).getFullYear() 
+          : -1;
+        
+        // ✅ Monthly Sales রিসেট (নতুন মাস হলে)
+        let monthlySales = existingData.monthlySales || 0;
+        if (existingMonth !== currentMonth || existingYear !== currentYear) {
+          monthlySales = 0;
+        }
+        
+        const updates = {
+          totalOrders: increment(1),
+          monthlySales: increment(totalAmount),
+          totalLogins: increment(1),
+          lastUpdated: currentDate // ✅ আজকের তারিখ
+        };
+        
+        if (isNewCustomer) {
+          updates.newCustomers = increment(1);
+        }
+        
+        await updateDoc(statsRef, updates);
+        console.log('✅ Stats updated with lastUpdated:', currentDate);
+      } else {
+        await setDoc(statsRef, {
+          totalOrders: 1,
+          monthlySales: totalAmount,
+          newCustomers: isNewCustomer ? 1 : 0,
+          totalLogins: 1,
+          lastUpdated: currentDate
+        });
+        console.log('✅ Stats created with lastUpdated:', currentDate);
+      }
+    } catch (error) {
+      console.error('❌ Stats update error:', error);
+    }
+  }, []);
+
   // ✅ অর্ডার প্লেস করুন
   const placeOrder = useCallback(async (items, totalPrice, deliveryInfo = null) => {
     if (!user) {
@@ -156,27 +210,8 @@ export function OrderProvider({ children }) {
           isOffline: false
         });
 
-        // ✅ Stats আপডেট
-        try {
-          const statsRef = doc(db, 'adminStats', 'stats');
-          const statsSnap = await getDoc(statsRef);
-          if (statsSnap.exists()) {
-            await updateDoc(statsRef, {
-              totalOrders: increment(1),
-              monthlySales: increment(finalTotal)
-            });
-          } else {
-            await setDoc(statsRef, {
-              totalOrders: 1,
-              monthlySales: finalTotal,
-              newCustomers: 0,
-              totalLogins: 0,
-              lastUpdated: new Date().toISOString()
-            });
-          }
-        } catch (statsError) {
-          console.error('Stats update error:', statsError);
-        }
+        // ✅ Stats আপডেট - lastUpdated সহ
+        await updateStats(finalTotal, true);
 
         const newOrder = { id: docRef.id, ...orderData, status: 'confirmed', isOffline: false };
         setOrders(prev => [newOrder, ...prev]);
@@ -205,7 +240,7 @@ export function OrderProvider({ children }) {
       console.error('❌ Error placing order:', error);
       throw error;
     }
-  }, [user, saveOrderOffline, calculateOrderTotal]);
+  }, [user, saveOrderOffline, calculateOrderTotal, updateStats]);
 
   // ✅ ইউজারের অর্ডার লোড করুন
   const loadUserOrders = useCallback(async () => {
@@ -431,7 +466,7 @@ export function OrderProvider({ children }) {
     };
   }, [calculateOrderTotal]);
 
-  // ✅ অফলাইন অর্ডার সিঙ্ক
+  // ✅ অফলাইন অর্ডার সিঙ্ক - Stats Update সহ
   const syncOfflineOrders = useCallback(async () => {
     if (!navigator.onLine) {
       console.log('📡 Offline, skipping sync');
@@ -454,8 +489,13 @@ export function OrderProvider({ children }) {
     console.log(`🔄 Syncing ${pendingSync.length} offline orders...`);
 
     let syncedCount = 0;
+    let totalAmount = 0;
+    
     for (const order of pendingSync) {
       try {
+        const orderTotal = order.totalPrice || 0;
+        totalAmount += orderTotal;
+        
         const orderData = {
           customerId: order.customerId,
           customerEmail: order.customerEmail,
@@ -463,7 +503,7 @@ export function OrderProvider({ children }) {
           customerPhone: order.customerPhone || '',
           items: order.items || [],
           subtotal: order.subtotal || calculateOrderTotal(order.items),
-          totalPrice: order.totalPrice || 0,
+          totalPrice: orderTotal,
           deliveryCharge: order.deliveryCharge || DELIVERY_CHARGE,
           discount: order.discount || 0,
           deliveryInfo: order.deliveryInfo || null,
@@ -490,7 +530,25 @@ export function OrderProvider({ children }) {
       }
     }
 
+    // ✅ Stats Update for synced orders
     if (syncedCount > 0) {
+      try {
+        const statsRef = doc(db, 'adminStats', 'stats');
+        const statsSnap = await getDoc(statsRef);
+        const currentDate = new Date().toISOString();
+        
+        if (statsSnap.exists()) {
+          await updateDoc(statsRef, {
+            totalOrders: increment(syncedCount),
+            monthlySales: increment(totalAmount),
+            lastUpdated: currentDate
+          });
+          console.log(`✅ Stats updated for ${syncedCount} synced orders`);
+        }
+      } catch (statsError) {
+        console.error('❌ Stats update error during sync:', statsError);
+      }
+      
       await loadUserOrders();
     }
   }, [user, loadPendingOrders, saveOfflineOrders, loadUserOrders, calculateOrderTotal]);
@@ -535,7 +593,8 @@ export function OrderProvider({ children }) {
     syncOfflineOrders,
     generateInvoice,
     loadOfflineOrders,
-    calculateOrderTotal
+    calculateOrderTotal,
+    updateStats
   };
 
   return (
