@@ -18,6 +18,9 @@ export function OrderProvider({ children }) {
   const [error, setError] = useState(null);
   const hasLoadedRef = useRef(false);
 
+  // ✅ Delivery Charge - Fixed
+  const DELIVERY_CHARGE = 60;
+
   // ✅ টোটাল প্রাইস ক্যালকুলেট করার ফাংশন
   const calculateOrderTotal = useCallback((items) => {
     if (!items || items.length === 0) return 0;
@@ -93,7 +96,7 @@ export function OrderProvider({ children }) {
   }, []);
 
   // ✅ অর্ডার প্লেস করুন
-  const placeOrder = useCallback(async (items, totalPrice) => {
+  const placeOrder = useCallback(async (items, totalPrice, deliveryInfo = null) => {
     if (!user) {
       throw new Error('Please login to place order');
     }
@@ -119,16 +122,23 @@ export function OrderProvider({ children }) {
         category: item.category || 'General'
       }));
 
-      // ✅ টোটাল ক্যালকুলেট (নিশ্চিত)
-      const calculatedTotal = calculateOrderTotal(orderItems);
-      const finalTotal = Number(totalPrice) || calculatedTotal;
+      // ✅ টোটাল ক্যালকুলেট
+      const subtotal = calculateOrderTotal(orderItems);
+      const deliveryCharge = DELIVERY_CHARGE;
+      const discount = 0;
+      const finalTotal = subtotal - discount + deliveryCharge;
 
       const orderData = {
         customerId: user.uid,
         customerEmail: user.email || 'guest@example.com',
         customerName: user.displayName || user.name || user.email?.split('@')[0] || 'Guest',
+        customerPhone: user.phoneNumber || '',
         items: orderItems,
+        subtotal: subtotal,
         totalPrice: finalTotal,
+        deliveryCharge: deliveryCharge,
+        discount: discount,
+        deliveryInfo: deliveryInfo || null,
         status: 'pending',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -251,7 +261,8 @@ export function OrderProvider({ children }) {
       // ✅ অফলাইন অর্ডারের টোটাল রিক্যালকুলেট
       const processedPending = userPending.map(order => ({
         ...order,
-        totalPrice: calculateOrderTotal(order.items) || order.totalPrice || 0
+        subtotal: calculateOrderTotal(order.items),
+        totalPrice: calculateOrderTotal(order.items) + (order.deliveryCharge || DELIVERY_CHARGE) - (order.discount || 0)
       }));
       
       allOrders = [...allOrders, ...processedPending];
@@ -305,7 +316,8 @@ export function OrderProvider({ children }) {
       if (offlineOrder) {
         return {
           ...offlineOrder,
-          totalPrice: calculateOrderTotal(offlineOrder.items) || offlineOrder.totalPrice || 0
+          subtotal: calculateOrderTotal(offlineOrder.items),
+          totalPrice: calculateOrderTotal(offlineOrder.items) + (offlineOrder.deliveryCharge || DELIVERY_CHARGE) - (offlineOrder.discount || 0)
         };
       }
 
@@ -388,29 +400,34 @@ export function OrderProvider({ children }) {
     }
   }, [loadPendingOrders, saveOfflineOrders]);
 
-  // ✅ ইনভয়েস জেনারেট
+  // ✅ ইনভয়েস জেনারেট - Delivery Charge সহ
   const generateInvoice = useCallback((order) => {
     if (!order) return null;
 
     const items = order.items || [];
-    const totalAmount = calculateOrderTotal(items);
+    const subtotal = calculateOrderTotal(items);
+    const deliveryCharge = Number(order.deliveryCharge) || DELIVERY_CHARGE;
+    const discount = Number(order.discount) || 0;
+    const total = subtotal - discount + deliveryCharge;
     
     return {
       invoiceNumber: `INV-${order.id?.slice(0, 8) || Date.now()}`,
       date: order.createdAt || new Date().toISOString(),
       customerName: order.customerName || order.customerEmail || 'Guest',
       customerEmail: order.customerEmail || 'N/A',
+      customerPhone: order.customerPhone || 'N/A',
       items: items.map(item => ({
         name: item.name || 'Unknown Product',
         quantity: Number(item.quantity) || 1,
         price: Number(item.price) || 0,
         total: (Number(item.price) || 0) * (Number(item.quantity) || 1)
       })),
-      subtotal: totalAmount,
-      tax: 0,
-      shipping: 0,
-      total: totalAmount,
-      status: order.status || 'pending'
+      subtotal: subtotal,
+      discount: discount,
+      deliveryCharge: deliveryCharge,
+      total: total,
+      status: order.status || 'pending',
+      paymentMethod: order.paymentMethod || 'Cash on Delivery'
     };
   }, [calculateOrderTotal]);
 
@@ -443,8 +460,13 @@ export function OrderProvider({ children }) {
           customerId: order.customerId,
           customerEmail: order.customerEmail,
           customerName: order.customerName,
+          customerPhone: order.customerPhone || '',
           items: order.items || [],
+          subtotal: order.subtotal || calculateOrderTotal(order.items),
           totalPrice: order.totalPrice || 0,
+          deliveryCharge: order.deliveryCharge || DELIVERY_CHARGE,
+          discount: order.discount || 0,
+          deliveryInfo: order.deliveryInfo || null,
           status: order.status || 'pending',
           createdAt: new Date(order.createdAt),
           isOffline: true,
@@ -471,7 +493,7 @@ export function OrderProvider({ children }) {
     if (syncedCount > 0) {
       await loadUserOrders();
     }
-  }, [user, loadPendingOrders, saveOfflineOrders, loadUserOrders]);
+  }, [user, loadPendingOrders, saveOfflineOrders, loadUserOrders, calculateOrderTotal]);
 
   // ✅ ইউজার চেঞ্জ হলে অর্ডার লোড
   useEffect(() => {
@@ -502,6 +524,7 @@ export function OrderProvider({ children }) {
     error,
     currentOrder,
     offlineOrders,
+    DELIVERY_CHARGE,
     placeOrder,
     loadUserOrders,
     loadAllOrders,
