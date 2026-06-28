@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import SearchBar from './searchbar';
 import ProductGrid from './ProductGrid';
-import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState(1);
@@ -133,9 +132,9 @@ export default function Dashboard() {
   const OfflineBadge = () => {
     if (isOnline) return null;
     return (
-      <div className="fixed bottom-4 right-4 z-50 bg-yellow-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
-        <span className="text-sm">📡</span>
-        <span className="text-sm font-medium">Offline Mode</span>
+      <div className="fixed bottom-4 right-4 z-50 bg-yellow-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-lg flex items-center gap-1.5 sm:gap-2 animate-pulse">
+        <span className="text-xs sm:text-sm">📡</span>
+        <span className="text-xs sm:text-sm font-medium">Offline Mode</span>
       </div>
     );
   };
@@ -143,8 +142,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       
-      {/* ✅ MODERN HERO SECTION */}
-      <div className="relative bg-gradient-to-br from-orange-50 via-white to-orange-50/30 overflow-hidden">
+      {/* ✅ MODERN HERO SECTION - Fully Responsive */}
+      <div className="relative bg-gradient-to-br from-orange-50 via-white to-orange-50/30 overflow-hidden py-12 sm:py-16 md:py-20 lg:py-28">
         
         {/* Background Decorative Elements */}
         <div className="absolute inset-0 overflow-hidden">
@@ -153,121 +152,123 @@ export default function Dashboard() {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-400/5 rounded-full blur-2xl"></div>
         </div>
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-28">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          
+          {/* Badge */}
+          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-100/80 backdrop-blur-sm rounded-full text-orange-700 text-xs sm:text-sm font-medium">
+            <span className="relative flex h-1.5 w-1.5 sm:h-2 sm:w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-full w-full bg-orange-500"></span>
+            </span>
+            🚀 Welcome to QuickBuy
+          </div>
+
+          {/* Title */}
+          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mt-3 sm:mt-4">
+            <span className="text-gray-800">Your Premium</span>
+            <br />
+            <span className="bg-gradient-to-r from-orange-500 to-orange-600 bg-clip-text text-transparent">
+              Shopping Experience
+            </span>
+          </h1>
+
+          {/* Description */}
+          <p className="text-sm sm:text-base md:text-lg lg:text-xl text-gray-600 max-w-2xl mx-auto mt-3 sm:mt-4 leading-relaxed">
+            Fast & smart shopping. Discover amazing products at best prices. 
+            Secure checkout and quick delivery.
+          </p>
+
+          {/* ✅ ONLINE + OFFLINE FEATURES - Fully Responsive */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 md:gap-5 max-w-2xl mx-auto mt-6 sm:mt-8">
             
-            {/* Left Side - Text Content */}
-            <div className="space-y-6 text-center lg:text-left">
-              {/* Badge */}
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-100/80 backdrop-blur-sm rounded-full text-orange-700 text-sm font-medium">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                </span>
-                🚀 Welcome to QuickBuy
-              </div>
-
-              {/* Title */}
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight">
-                <span className="text-gray-800">Your Premium</span>
-                <br />
-                <span className="bg-gradient-to-r from-orange-500 to-orange-600 bg-clip-text text-transparent">
-                  Shopping Experience
-                </span>
-              </h1>
-
-              {/* Description */}
-              <p className="text-lg sm:text-xl text-gray-600 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                Fast & smart shopping. Discover amazing products at best prices. 
-                Secure checkout and quick delivery.
-              </p>
-
-              {/* Features Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                <div className="flex items-center justify-center lg:justify-start gap-3 px-4 py-3 bg-white/70 backdrop-blur-sm rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition group">
-                  <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-lg flex items-center justify-center text-white text-lg group-hover:scale-110 transition">
-                    🚀
+            {/* Online Feature Card */}
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+              <div className="relative bg-white/90 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 md:p-5 border-2 border-blue-200 shadow-lg hover:shadow-xl hover:border-blue-400 transition-all duration-300">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center text-2xl sm:text-3xl shadow-lg flex-shrink-0 group-hover:scale-110 transition duration-300">
+                    🌐
                   </div>
-                  <div>
-                    <p className="font-semibold text-gray-800 text-sm">Fast Delivery</p>
-                    <p className="text-xs text-gray-500">2-3 days</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center lg:justify-start gap-3 px-4 py-3 bg-white/70 backdrop-blur-sm rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition group">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-lg flex items-center justify-center text-white text-lg group-hover:scale-110 transition">
-                    🔒
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-800 text-sm">Secure Checkout</p>
-                    <p className="text-xs text-gray-500">100% safe</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center lg:justify-start gap-3 px-4 py-3 bg-white/70 backdrop-blur-sm rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition group">
-                  <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-500 rounded-lg flex items-center justify-center text-white text-lg group-hover:scale-110 transition">
-                    💳
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-800 text-sm">Easy Returns</p>
-                    <p className="text-xs text-gray-500">30 days policy</p>
+                  <div className="text-left flex-1 min-w-0">
+                    <h3 className="text-sm sm:text-base md:text-lg font-bold text-gray-800">Online Mode</h3>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">Real-time shopping, instant orders</p>
+                    <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1 sm:mt-1.5">
+                      <span className="inline-flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-medium text-green-600 bg-green-50 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full">
+                        <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                        Live
+                      </span>
+                      <span className="text-gray-300 text-[10px] sm:text-xs">|</span>
+                      <span className="text-[10px] sm:text-xs text-gray-500 flex items-center gap-0.5 sm:gap-1">
+                        <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Auto Sync
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* ✅ CTA Buttons - সরিয়ে ফেলা হয়েছে */}
             </div>
 
-            {/* Right Side - Hero Image/Illustration */}
-            <div className="relative hidden lg:block">
-              <div className="relative">
-                {/* Main Image Card */}
-                <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden">
-                  <img 
-                    src="https://images.unsplash.com/photo-1557821552-17105176677c?w=600&h=400&fit=crop&auto=format" 
-                    alt="Shopping"
-                    className="w-full h-80 object-cover"
-                    loading="lazy"
-                  />
-                  {/* Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-                  
-                  {/* Floating Badge 1 - Top Right */}
-                  <div className="absolute -top-3 -right-3 bg-white rounded-xl shadow-lg p-3 animate-bounce-slow">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">⭐</span>
-                      <div>
-                        <p className="font-bold text-sm">4.9 Rating</p>
-                        <p className="text-xs text-gray-500">1.2k reviews</p>
-                      </div>
-                    </div>
+            {/* Offline Feature Card */}
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl sm:rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+              <div className="relative bg-white/90 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 md:p-5 border-2 border-orange-200 shadow-lg hover:shadow-xl hover:border-orange-400 transition-all duration-300">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg sm:rounded-xl flex items-center justify-center text-2xl sm:text-3xl shadow-lg flex-shrink-0 group-hover:scale-110 transition duration-300">
+                    📡
                   </div>
-
-                  {/* Floating Badge 2 - Bottom Left */}
-                  <div className="absolute -bottom-3 -left-3 bg-white rounded-xl shadow-lg p-3 animate-bounce-slow-delay">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">🎉</span>
-                      <div>
-                        <p className="font-bold text-sm">50% Off</p>
-                        <p className="text-xs text-gray-500">Limited time</p>
-                      </div>
+                  <div className="text-left flex-1 min-w-0">
+                    <h3 className="text-sm sm:text-base md:text-lg font-bold text-gray-800">Offline Mode</h3>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">Shop without internet connection</p>
+                    <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1 sm:mt-1.5">
+                      <span className="inline-flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-medium text-yellow-600 bg-yellow-50 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full">
+                        <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>
+                        Offline
+                      </span>
+                      <span className="text-gray-300 text-[10px] sm:text-xs">|</span>
+                      <span className="text-[10px] sm:text-xs text-gray-500 flex items-center gap-0.5 sm:gap-1">
+                        <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                        </svg>
+                        Auto Sync
+                      </span>
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
 
-                {/* Stats Floating Cards */}
-                <div className="absolute -right-6 top-1/2 -translate-y-1/2 bg-white rounded-xl shadow-lg p-4 hidden xl:block">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-orange-500">10K+</p>
-                    <p className="text-xs text-gray-500">Happy Customers</p>
-                  </div>
-                </div>
-                <div className="absolute -left-6 bottom-10 bg-white rounded-xl shadow-lg p-4 hidden xl:block">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-500">500+</p>
-                    <p className="text-xs text-gray-500">Products</p>
-                  </div>
-                </div>
+          {/* ✅ Key Features - 3 Columns - Fully Responsive */}
+          <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 md:gap-4 max-w-2xl mx-auto mt-5 sm:mt-6 md:mt-8">
+            <div className="flex items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white/70 backdrop-blur-sm rounded-lg sm:rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition group">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-lg flex items-center justify-center text-white text-base sm:text-lg group-hover:scale-110 transition">
+                🚀
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-gray-800 text-[11px] sm:text-xs md:text-sm">Fast Delivery</p>
+                <p className="text-[9px] sm:text-[10px] md:text-xs text-gray-500">2-3 days</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white/70 backdrop-blur-sm rounded-lg sm:rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition group">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-lg flex items-center justify-center text-white text-base sm:text-lg group-hover:scale-110 transition">
+                🔒
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-gray-800 text-[11px] sm:text-xs md:text-sm">Secure Checkout</p>
+                <p className="text-[9px] sm:text-[10px] md:text-xs text-gray-500">100% safe</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white/70 backdrop-blur-sm rounded-lg sm:rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition group">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-gradient-to-br from-green-400 to-green-500 rounded-lg flex items-center justify-center text-white text-base sm:text-lg group-hover:scale-110 transition">
+                💳
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-gray-800 text-[11px] sm:text-xs md:text-sm">Easy Returns</p>
+                <p className="text-[9px] sm:text-[10px] md:text-xs text-gray-500">30 days policy</p>
               </div>
             </div>
           </div>
@@ -275,10 +276,10 @@ export default function Dashboard() {
       </div>
 
       {/* Products Section */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div>
-            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800">🔥 Trending Products</h2>
+            <h2 className="text-base sm:text-lg md:text-2xl font-bold text-gray-800">🔥 Trending Products</h2>
             <p className="text-xs sm:text-sm text-gray-500">
               {searchQuery ? `Showing results for "${searchQuery}"` : 'Browse our most popular items'}
             </p>
@@ -293,21 +294,21 @@ export default function Dashboard() {
 
         <ProductGrid key={currentPage} products={currentProducts} loading={loading} />
 
-        {/* Pagination */}
+        {/* Pagination - Fully Responsive */}
         {totalPages > 1 && (
-          <div className="mt-8 sm:mt-10 flex justify-center items-center gap-2 flex-wrap">
+          <div className="mt-6 sm:mt-8 md:mt-10 flex justify-center items-center gap-1 sm:gap-2 flex-wrap">
             <button
               onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
-              className="px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition flex items-center gap-1 shadow-sm"
+              className="px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition flex items-center gap-0.5 sm:gap-1 shadow-sm"
               disabled={currentPage === 1}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Prev
+              <span className="hidden xs:inline">Prev</span>
             </button>
 
-            <div className="flex gap-1">
+            <div className="flex gap-0.5 sm:gap-1">
               {Array.from({ length: Math.min(5, totalPages) }).map((_, idx) => {
                 const pageNumber = currentPage + idx;
                 if (pageNumber > totalPages) return null;
@@ -315,7 +316,7 @@ export default function Dashboard() {
                   <button
                     key={pageNumber}
                     onClick={() => handlePageChange(pageNumber)}
-                    className={`w-10 h-10 rounded-lg text-sm font-medium transition shadow-sm ${
+                    className={`w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-lg text-xs sm:text-sm font-medium transition shadow-sm ${
                       currentPage === pageNumber
                         ? 'bg-orange-500 text-white shadow-md shadow-orange-200'
                         : 'bg-white border border-gray-200 hover:bg-gray-50'
@@ -329,11 +330,11 @@ export default function Dashboard() {
 
             <button
               onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
-              className="px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition flex items-center gap-1 shadow-sm"
+              className="px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition flex items-center gap-0.5 sm:gap-1 shadow-sm"
               disabled={currentPage === totalPages}
             >
-              Next
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="hidden xs:inline">Next</span>
+              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -343,20 +344,6 @@ export default function Dashboard() {
 
       {/* ✅ Offline Mode Badge */}
       <OfflineBadge />
-
-      {/* ✅ CSS Animations */}
-      <style>{`
-        @keyframes bounce-slow {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-8px); }
-        }
-        .animate-bounce-slow {
-          animation: bounce-slow 3s ease-in-out infinite;
-        }
-        .animate-bounce-slow-delay {
-          animation: bounce-slow 3s ease-in-out infinite 1.5s;
-        }
-      `}</style>
     </div>
   );
 }
