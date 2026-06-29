@@ -19,6 +19,7 @@ export function OrderProvider({ children }) {
   const [error, setError] = useState(null);
   const hasLoadedRef = useRef(false);
   const unsubscribeRef = useRef(null);
+  const [syncedOrders, setSyncedOrders] = useState([]);
 
   // ✅ Delivery Charge - Fixed
   const DELIVERY_CHARGE = 60;
@@ -338,7 +339,7 @@ export function OrderProvider({ children }) {
     }
   }, [user]);
 
-  // ✅ অর্ডার প্লেস করুন
+  // ✅ অর্ডার প্লেস করুন (Offline Log যোগ করা হয়েছে)
   const placeOrder = useCallback(async (items, totalPrice, deliveryInfo = null) => {
     if (!user) {
       throw new Error('Please login to place order');
@@ -410,8 +411,18 @@ export function OrderProvider({ children }) {
         }
         return docRef.id;
       } else {
-        // ✅ Offline Order
+        // ✅ Offline Order with Log
         const offlineOrder = saveOrderOffline(orderData);
+        
+        // ✅ Offline Order Log (NEW)
+        try {
+          const offlineLogs = JSON.parse(localStorage.getItem('offlineLogs') || '{"registered":0,"logins":0,"orders":0}');
+          offlineLogs.orders += 1;
+          localStorage.setItem('offlineLogs', JSON.stringify(offlineLogs));
+          console.log('📊 Offline Order Logged:', offlineLogs);
+        } catch (logError) {
+          console.error('❌ Error logging offline order:', logError);
+        }
         
         if (offlineOrder) {
           setOrders(prev => [offlineOrder, ...prev]);

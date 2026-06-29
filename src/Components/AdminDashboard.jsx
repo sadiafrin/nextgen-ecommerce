@@ -30,8 +30,15 @@ export default function AdminDashboard() {
   const [syncStatus, setSyncStatus] = useState('idle');
   const [realTimeStatus, setRealTimeStatus] = useState('🟢 Live');
   const [isStatsSyncing, setIsStatsSyncing] = useState(false);
+
+  // ✅ Offline Logs State
+  const [offlineLogCounts, setOfflineLogCounts] = useState({
+    registered: 0,
+    logins: 0,
+    orders: 0
+  });
   
-  // ✅ Firebase Stats (Real-time from Firebase)
+  // ✅ Firebase Stats
   const [firebaseStats, setFirebaseStats] = useState({
     newCustomers: 0,
     totalOrders: 0,
@@ -43,7 +50,7 @@ export default function AdminDashboard() {
     lastUpdated: null
   });
 
-  // ✅ Offline Stats (from localStorage)
+  // ✅ Offline Stats
   const [offlineStats, setOfflineStats] = useState({
     pendingUsers: 0,
     offlineLogins: 0,
@@ -94,6 +101,9 @@ export default function AdminDashboard() {
         offlineOrders: o.length,
         offlineRevenue: offlineRevenue
       });
+
+      const logs = JSON.parse(localStorage.getItem('offlineLogs') || '{"registered":0,"logins":0,"orders":0}');
+      setOfflineLogCounts(logs);
       
       console.log('📦 Offline Data Loaded:', { p: p.length, l: l.length, o: o.length });
     } catch (e) {
@@ -108,6 +118,9 @@ export default function AdminDashboard() {
     
     try {
       let syncedCount = 0;
+      let syncedUsers = 0;
+      let syncedLogins = 0;
+      let syncedOrdersCount = 0;
 
       const pendingUsersData = JSON.parse(localStorage.getItem('pendingUsers') || '[]');
       if (pendingUsersData.length > 0) {
@@ -127,6 +140,7 @@ export default function AdminDashboard() {
                 createdAt: new Date()
               });
               syncedCount++;
+              syncedUsers++;
             }
           } catch (err) {
             console.error(`❌ Failed to sync user ${userData.email}:`, err);
@@ -146,6 +160,7 @@ export default function AdminDashboard() {
               status: 'pending'
             });
             syncedCount++;
+            syncedOrdersCount++;
           } catch (err) {
             console.error(`❌ Failed to sync order ${order.id}:`, err);
           }
@@ -168,6 +183,7 @@ export default function AdminDashboard() {
                 lastOfflineLogin: new Date().toISOString()
               });
               syncedCount++;
+              syncedLogins++;
             }
           } catch (err) {
             console.error(`❌ Failed to sync login ${login.email}:`, err);
@@ -176,13 +192,16 @@ export default function AdminDashboard() {
         localStorage.removeItem('offlineLogins');
       }
 
+      localStorage.setItem('offlineLogs', JSON.stringify({ registered: 0, logins: 0, orders: 0 }));
+      setOfflineLogCounts({ registered: 0, logins: 0, orders: 0 });
+
       loadOfflineData();
       
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus('idle'), 3000);
       
       if (syncedCount > 0) {
-        alert(`✅ ${syncedCount} offline items synced successfully!`);
+        alert(`✅ ${syncedCount} offline items synced successfully!\n\n📦 Users: ${syncedUsers}\n📱 Logins: ${syncedLogins}\n📋 Orders: ${syncedOrdersCount}`);
       } else {
         alert('✅ All offline data already synced!');
       }
@@ -196,7 +215,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // ✅ Manual Stats Sync Function - FIXED (Conflict Free)
+  // ✅ Manual Stats Sync Function
   const syncStatsManually = async () => {
     if (isStatsSyncing) return;
     
@@ -206,12 +225,10 @@ export default function AdminDashboard() {
     try {
       console.log('📊 Starting manual stats sync...');
       
-      // 1️⃣ সব অর্ডার লোড করুন
       const ordersQuery = query(collection(db, "orders"));
       const ordersSnapshot = await getDocs(ordersQuery);
       const allOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // 2️⃣ Calculate Stats
       const totalOrders = allOrders.length;
       const revenue = allOrders.reduce((sum, order) => {
         const totalPrice = order.totalPrice || order.total || 0;
@@ -220,13 +237,11 @@ export default function AdminDashboard() {
       const pending = allOrders.filter(o => o.status === 'pending' || o.status === 'Pending').length;
       const completed = allOrders.filter(o => o.status === 'completed' || o.status === 'Completed' || o.status === 'delivered' || o.status === 'Delivered').length;
       
-      // 3️⃣ Users Count
       const usersSnapshot = await getDocs(collection(db, "users"));
       const newCustomers = usersSnapshot.docs.length;
       
       console.log('📊 Calculated Stats:', { totalOrders, revenue, pending, completed, newCustomers });
       
-      // 4️⃣ Update Stats in Firebase using updateDoc (not setDoc)
       const statsRef = doc(db, "adminStats", "stats");
       const currentDate = new Date().toISOString();
       
@@ -242,7 +257,6 @@ export default function AdminDashboard() {
       
       console.log('✅ Stats updated in Firebase at:', currentDate);
       
-      // 5️⃣ Immediately update local state (without waiting for onSnapshot)
       setFirebaseStats(prev => ({
         ...prev,
         totalOrders: totalOrders,
@@ -254,7 +268,6 @@ export default function AdminDashboard() {
         lastUpdated: currentDate
       }));
       
-      // 6️⃣ Update offline stats
       loadOfflineData();
       
       setRealTimeStatus('🟢 Live');
@@ -264,6 +277,76 @@ export default function AdminDashboard() {
       console.error('❌ Error syncing stats:', error);
       setRealTimeStatus('🔴 Error');
       alert('❌ Failed to sync stats: ' + error.message);
+    } finally {
+      setIsStatsSyncing(false);
+    }
+  };
+
+  // ✅ Complete All Pending Orders
+  const completeAllPendingOrders = async () => {
+    if (!confirm('Are you sure you want to complete all pending orders?')) return;
+    
+    setIsStatsSyncing(true);
+    setRealTimeStatus('🔄 Completing orders...');
+    
+    try {
+      let count = 0;
+      
+      const ordersRef = collection(db, 'orders');
+      const q = query(ordersRef, where('status', '==', 'pending'));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        alert('✅ No pending orders found!');
+        setRealTimeStatus('🟢 Live');
+        setIsStatsSyncing(false);
+        return;
+      }
+      
+      for (const docSnap of snapshot.docs) {
+        const orderRef = doc(db, 'orders', docSnap.id);
+        await updateDoc(orderRef, { 
+          status: 'completed',
+          updatedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString()
+        });
+        count++;
+        console.log(`✅ Completed order: ${docSnap.id}`);
+      }
+      
+      setOrders(prev => prev.map(order => {
+        if (order.status === 'pending' || order.status === 'Pending') {
+          return { ...order, status: 'completed' };
+        }
+        return order;
+      }));
+      
+      setFirebaseStats(prev => ({
+        ...prev,
+        pendingOrders: 0,
+        completedOrders: prev.completedOrders + count
+      }));
+      
+      try {
+        const pendingOrdersLocal = JSON.parse(localStorage.getItem('pendingOrders') || '[]');
+        const updatedPending = pendingOrdersLocal.filter(o => 
+          o.status !== 'pending' && o.status !== 'Pending'
+        );
+        localStorage.setItem('pendingOrders', JSON.stringify(updatedPending));
+        console.log('✅ Cleared pending orders from localStorage');
+      } catch (e) {
+        console.warn('⚠️ Error clearing localStorage:', e);
+      }
+      
+      loadOfflineData();
+      
+      setRealTimeStatus('🟢 Live');
+      alert(`✅ ${count} pending orders completed successfully!`);
+      
+    } catch (error) {
+      console.error('❌ Error completing orders:', error);
+      setRealTimeStatus('🔴 Error');
+      alert('❌ Failed to complete orders: ' + error.message);
     } finally {
       setIsStatsSyncing(false);
     }
@@ -279,7 +362,6 @@ export default function AdminDashboard() {
     setLoading(true);
     setRealTimeStatus('🔄 Connecting...');
 
-    // 1️⃣ Products - Real-time
     const productsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"));
     const unsubscribeProducts = onSnapshot(productsQuery, (snapshot) => {
       const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -289,7 +371,6 @@ export default function AdminDashboard() {
       console.error('❌ Products error:', error);
     });
 
-    // 2️⃣ Orders - Real-time (Firebase Orders)
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
     const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -319,7 +400,6 @@ export default function AdminDashboard() {
       setRealTimeStatus('🔴 Offline');
     });
 
-    // 3️⃣ Users - Real-time
     const usersQuery = query(collection(db, "users"), orderBy("createdAt", "desc"));
     const unsubscribeUsers = onSnapshot(usersQuery, async (snapshot) => {
       const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -336,19 +416,16 @@ export default function AdminDashboard() {
       console.error('❌ Users error:', error);
     });
 
-    // 4️⃣ Admin Stats - Real-time (with conflict avoidance)
     const statsRef = doc(db, "adminStats", "stats");
     const unsubscribeStats = onSnapshot(statsRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         
-        // ✅ Check if this is a recent manual update (avoid conflict)
         const lastUpdated = data.lastUpdated ? new Date(data.lastUpdated) : null;
         const now = new Date();
         const diffMs = lastUpdated ? now - lastUpdated : Infinity;
         const diffSec = diffMs / 1000;
         
-        // ✅ If updated within last 2 seconds, skip (manual update already applied)
         if (diffSec < 2 && isStatsSyncing) {
           console.log('⏳ Skipping recent update (manual sync in progress)');
           return;
@@ -371,7 +448,6 @@ export default function AdminDashboard() {
       console.error('❌ Stats error:', error);
     });
 
-    // 5️⃣ Load Offline Data
     loadOfflineData();
 
     setLoading(false);
@@ -621,12 +697,12 @@ export default function AdminDashboard() {
               <span className="text-2xl sm:text-3xl">📦</span>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs sm:text-sm font-semibold text-gray-700">Offline Registered</h3>
-                <p className="text-[10px] sm:text-xs text-gray-500">Users who registered offline</p>
+                <p className="text-[10px] sm:text-xs text-gray-500">Total offline registrations</p>
               </div>
-              <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-sm sm:text-lg font-bold ${
-                offlineStats.pendingUsers > 0 ? "bg-yellow-500 text-white animate-pulse" : "bg-green-100 text-green-700"
+              <span className={`px-2 sm:px-3 py-1 rounded-full text-sm sm:text-lg font-bold ${
+                offlineLogCounts.registered > 0 ? "bg-yellow-500 text-white animate-pulse" : "bg-green-100 text-green-700"
               }`}>
-                {offlineStats.pendingUsers}
+                {offlineLogCounts.registered}
               </span>
             </div>
           </div>
@@ -636,12 +712,12 @@ export default function AdminDashboard() {
               <span className="text-2xl sm:text-3xl">📱</span>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs sm:text-sm font-semibold text-gray-700">Offline Logins</h3>
-                <p className="text-[10px] sm:text-xs text-gray-500">Users who logged in offline</p>
+                <p className="text-[10px] sm:text-xs text-gray-500">Total offline logins</p>
               </div>
-              <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-sm sm:text-lg font-bold ${
-                offlineStats.offlineLogins > 0 ? "bg-blue-500 text-white animate-pulse" : "bg-green-100 text-green-700"
+              <span className={`px-2 sm:px-3 py-1 rounded-full text-sm sm:text-lg font-bold ${
+                offlineLogCounts.logins > 0 ? "bg-blue-500 text-white animate-pulse" : "bg-green-100 text-green-700"
               }`}>
-                {offlineStats.offlineLogins}
+                {offlineLogCounts.logins}
               </span>
             </div>
           </div>
@@ -651,12 +727,12 @@ export default function AdminDashboard() {
               <span className="text-2xl sm:text-3xl">📋</span>
               <div className="flex-1 min-w-0">
                 <h3 className="text-xs sm:text-sm font-semibold text-gray-700">Offline Orders</h3>
-                <p className="text-[10px] sm:text-xs text-gray-500">Orders placed offline</p>
+                <p className="text-[10px] sm:text-xs text-gray-500">Total offline orders</p>
               </div>
-              <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-sm sm:text-lg font-bold ${
-                offlineStats.offlineOrders > 0 ? "bg-purple-500 text-white animate-pulse" : "bg-green-100 text-green-700"
+              <span className={`px-2 sm:px-3 py-1 rounded-full text-sm sm:text-lg font-bold ${
+                offlineLogCounts.orders > 0 ? "bg-purple-500 text-white animate-pulse" : "bg-green-100 text-green-700"
               }`}>
-                {offlineStats.offlineOrders}
+                {offlineLogCounts.orders}
               </span>
             </div>
           </div>
@@ -668,26 +744,21 @@ export default function AdminDashboard() {
   // ✅ Stats Cards - Firebase Stats ONLY
   const StatsCards = () => {
     const totalRevenue = firebaseStats.totalRevenue || 0;
-    const lastUpdated = firebaseStats.lastUpdated 
-      ? new Date(firebaseStats.lastUpdated).toLocaleString() 
-      : 'N/A';
+    const totalLogins = firebaseStats.totalLogins || 0;
     
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8">
         
-        {/* New Customers - Firebase */}
         <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-blue-500 hover:shadow-lg transition">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">New Customers</p>
               <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-blue-600 mt-1">{firebaseStats.newCustomers}</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
             </div>
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">👤</div>
           </div>
         </div>
 
-        {/* Total Orders - Firebase */}
         <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-green-500 hover:shadow-lg transition">
           <div className="flex items-center justify-between">
             <div>
@@ -696,13 +767,11 @@ export default function AdminDashboard() {
               {offlineStats.offlineOrders > 0 && (
                 <p className="text-xs text-yellow-600 mt-0.5">+ {offlineStats.offlineOrders} offline pending</p>
               )}
-              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
             </div>
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">📋</div>
           </div>
         </div>
 
-        {/* Total Revenue - Firebase */}
         <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-purple-500 hover:shadow-lg transition">
           <div className="flex items-center justify-between">
             <div>
@@ -711,24 +780,35 @@ export default function AdminDashboard() {
               {offlineStats.offlineRevenue > 0 && (
                 <p className="text-xs text-yellow-600 mt-0.5">+ ৳{offlineStats.offlineRevenue.toLocaleString()} offline</p>
               )}
-              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
             </div>
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">💰</div>
           </div>
         </div>
 
-        {/* Pending Orders - Firebase */}
         <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-orange-500 hover:shadow-lg transition">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Pending Orders</p>
               <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-orange-600 mt-1">{firebaseStats.pendingOrders}</p>
-              {offlineStats.offlineOrders > 0 && (
-                <p className="text-xs text-yellow-600 mt-0.5">+ {offlineStats.offlineOrders} offline</p>
+              {firebaseStats.pendingOrders === 0 && (
+                <p className="text-[10px] text-green-500 mt-0.5">✅ All completed</p>
               )}
-              <p className="text-[10px] text-gray-400 mt-0.5">From Firebase</p>
+              {offlineStats.offlineOrders > 0 && (
+                <p className="text-xs text-yellow-600 mt-0.5">+ {offlineStats.offlineOrders} offline pending</p>
+              )}
             </div>
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">⏳</div>
+          </div>
+        </div>
+
+        {/* ✅ Total Logins - NEW */}
+        <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border-l-4 border-teal-500 hover:shadow-lg transition">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Logins</p>
+              <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-teal-600 mt-1">{totalLogins}</p>
+            </div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-teal-100 rounded-full flex items-center justify-center text-xl sm:text-2xl">🔑</div>
           </div>
         </div>
 
@@ -828,6 +908,12 @@ export default function AdminDashboard() {
               {isStatsSyncing ? '⏳ Syncing...' : '📊 Sync Stats'}
             </button>
             <button 
+              onClick={completeAllPendingOrders}
+              className="w-full sm:w-auto bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition text-xs sm:text-sm flex items-center justify-center gap-1"
+            >
+              ✅ Complete All Pending
+            </button>
+            <button 
               onClick={handleRefresh} 
               className="w-full sm:w-auto bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition text-xs sm:text-sm flex items-center justify-center gap-1"
             >
@@ -841,15 +927,15 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6 flex-wrap">
-          <button onClick={() => setActiveTab("overview")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "overview" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📊 Overview</button>
-          <button onClick={() => setActiveTab("products")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "products" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📦 Products</button>
-          <button onClick={() => setActiveTab("orders")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "orders" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📋 Orders</button>
-          <button onClick={() => setActiveTab("users")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "users" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>👥 Users</button>
-          <button onClick={() => setActiveTab("offline-users")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "offline-users" ? "bg-yellow-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📦 Offline Users</button>
-          <button onClick={() => setActiveTab("offline-logins")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "offline-logins" ? "bg-blue-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📱 Offline Logins</button>
-          <button onClick={() => setActiveTab("offline-orders")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "offline-orders" ? "bg-purple-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📋 Offline Orders</button>
-          <button onClick={() => setActiveTab("synced-orders")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "synced-orders" ? "bg-green-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>✅ Synced Orders</button>
-          <button onClick={() => setActiveTab("messages")} className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition text-[10px] sm:text-sm ${activeTab === "messages" ? "bg-blue-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100"}`}>📩 Messages</button>
+          <button onClick={() => setActiveTab("overview")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "overview" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📊 Overview</button>
+          <button onClick={() => setActiveTab("products")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "products" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📦 Products</button>
+          <button onClick={() => setActiveTab("orders")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "orders" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📋 Orders</button>
+          <button onClick={() => setActiveTab("users")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "users" ? "bg-orange-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>👥 Users</button>
+          <button onClick={() => setActiveTab("offline-users")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "offline-users" ? "bg-yellow-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📦 Offline Users</button>
+          <button onClick={() => setActiveTab("offline-logins")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "offline-logins" ? "bg-blue-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📱 Offline Logins</button>
+          <button onClick={() => setActiveTab("offline-orders")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "offline-orders" ? "bg-purple-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📋 Offline Orders</button>
+          <button onClick={() => setActiveTab("synced-orders")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "synced-orders" ? "bg-green-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>✅ Synced Orders</button>
+          <button onClick={() => setActiveTab("messages")} className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition text-xs sm:text-sm ${activeTab === "messages" ? "bg-blue-500 text-white shadow-md" : "bg-white text-gray-600 hover:bg-gray-100 hover:shadow-sm"}`}>📩 Messages</button>
         </div>
 
         {/* ===== OVERVIEW TAB ===== */}
@@ -1084,130 +1170,221 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ===== OFFLINE USERS TAB ===== */}
+        {/* ===== OFFLINE USERS TAB - DETAILED LIST (FIXED) ===== */}
         {activeTab === "offline-users" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <h2 className="text-sm sm:text-base md:text-lg font-bold">📦 Offline Registered Users ({pendingUsers.length})</h2>
-              <button onClick={loadOfflineData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+            <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">📦 Offline Registered Users</h2>
+                <p className="text-sm text-gray-500">Users who registered offline</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-semibold">
+                  {pendingUsers.length} users
+                </span>
+                <button onClick={loadOfflineData} className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
             </div>
             {pendingUsers.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-sm">✅ No offline registered users.</div>
+              <div className="p-8 text-center text-gray-500">
+                <div className="text-5xl mb-3">📭</div>
+                <p className="text-base font-medium">No offline registered users</p>
+                <p className="text-sm text-gray-400 mt-1">Offline registrations will appear here</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs sm:text-sm">
+                <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">#</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Name</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Email</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden sm:table-cell">Registered At</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">User</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider hidden sm:table-cell">Registered At</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {pendingUsers.slice(0, 20).map((user, i) => (
-                      <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-2 sm:px-4 py-2 sm:py-3">{i + 1}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium truncate max-w-[80px]">{user.name}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 truncate max-w-[100px] sm:max-w-[150px]">{user.email}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell text-[10px] sm:text-xs">{user.createdAt ? new Date(user.createdAt).toLocaleString() : "N/A"}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3"><span className="px-2 py-1 rounded-full text-[10px] sm:text-xs bg-yellow-100 text-yellow-700">⏳ Pending</span></td>
+                  <tbody className="divide-y divide-gray-100">
+                    {pendingUsers.map((user, index) => (
+                      <tr key={index} className="hover:bg-yellow-50 transition duration-150">
+                        <td className="px-4 py-3 text-gray-500">{index + 1}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 text-sm font-bold">
+                              {user.name?.charAt(0).toUpperCase() || 'U'}
+                            </div>
+                            <span className="font-medium text-gray-800">{user.name || 'Unknown'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{user.email}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 hidden sm:table-cell">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleString() : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
+                            <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>
+                            Pending
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {pendingUsers.length > 20 && (
-                  <div className="p-3 text-center text-xs text-gray-400">Showing 20 of {pendingUsers.length} users</div>
-                )}
               </div>
             )}
           </div>
         )}
 
-        {/* ===== OFFLINE LOGINS TAB ===== */}
+        {/* ===== OFFLINE LOGINS TAB - DETAILED LIST (FIXED) ===== */}
         {activeTab === "offline-logins" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <h2 className="text-sm sm:text-base md:text-lg font-bold">📱 Offline Logins ({offlineLogins.length})</h2>
-              <button onClick={loadOfflineData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+            <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">📱 Offline Logins</h2>
+                <p className="text-sm text-gray-500">Users who logged in offline</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+                  {offlineLogins.length} logins
+                </span>
+                <button onClick={loadOfflineData} className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
             </div>
             {offlineLogins.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-sm">✅ No offline logins recorded.</div>
+              <div className="p-8 text-center text-gray-500">
+                <div className="text-5xl mb-3">📭</div>
+                <p className="text-base font-medium">No offline logins recorded</p>
+                <p className="text-sm text-gray-400 mt-1">Offline logins will appear here</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs sm:text-sm">
+                <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">#</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden sm:table-cell">Name</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Email</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden md:table-cell">First Login</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden lg:table-cell">Last Login</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Count</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">User</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider hidden md:table-cell">First Login</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider hidden lg:table-cell">Last Login</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Count</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {offlineLogins.slice(0, 20).map((login, i) => (
-                      <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-2 sm:px-4 py-2 sm:py-3">{i + 1}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell truncate max-w-[80px]">{login.name}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 truncate max-w-[100px] sm:max-w-[150px]">{login.email}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden md:table-cell text-[10px] sm:text-xs">{login.firstLogin ? new Date(login.firstLogin).toLocaleString() : "N/A"}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden lg:table-cell text-[10px] sm:text-xs">{login.lastLogin ? new Date(login.lastLogin).toLocaleString() : "N/A"}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 text-center"><span className="px-2 py-1 rounded-full text-[10px] sm:text-xs bg-blue-100 text-blue-700">{login.count}</span></td>
+                  <tbody className="divide-y divide-gray-100">
+                    {offlineLogins.map((login, index) => (
+                      <tr key={index} className="hover:bg-blue-50 transition duration-150">
+                        <td className="px-4 py-3 text-gray-500">{index + 1}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-sm font-bold">
+                              {login.name?.charAt(0).toUpperCase() || 'U'}
+                            </div>
+                            <span className="font-medium text-gray-800">{login.name || 'Unknown'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{login.email}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">
+                          {login.firstLogin ? new Date(login.firstLogin).toLocaleString() : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 hidden lg:table-cell">
+                          {login.lastLogin ? new Date(login.lastLogin).toLocaleString() : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center justify-center px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium min-w-[30px]">
+                            {login.count || 1}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {offlineLogins.length > 20 && (
-                  <div className="p-3 text-center text-xs text-gray-400">Showing 20 of {offlineLogins.length} logins</div>
-                )}
               </div>
             )}
           </div>
         )}
 
-        {/* ===== OFFLINE ORDERS TAB ===== */}
+        {/* ===== OFFLINE ORDERS TAB - DETAILED LIST (FIXED) ===== */}
         {activeTab === "offline-orders" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <h2 className="text-sm sm:text-base md:text-lg font-bold">📋 Offline Orders ({offlineOrders.length})</h2>
-              <button onClick={loadOfflineData} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+            <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">📋 Offline Orders</h2>
+                <p className="text-sm text-gray-500">Orders placed offline</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold">
+                  {offlineOrders.length} orders
+                </span>
+                <button onClick={loadOfflineData} className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
             </div>
             {offlineOrders.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-sm">✅ No offline orders found.</div>
+              <div className="p-8 text-center text-gray-500">
+                <div className="text-5xl mb-3">📭</div>
+                <p className="text-base font-medium">No offline orders found</p>
+                <p className="text-sm text-gray-400 mt-1">Offline orders will appear here</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs sm:text-sm">
+                <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">#</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden sm:table-cell">Order ID</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Customer</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Items</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Total</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden md:table-cell">Date</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Order ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Customer</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Items</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Total</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider hidden md:table-cell">Date</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {offlineOrders.slice(0, 20).map((order, i) => (
-                      <tr key={i} className="border-t hover:bg-gray-50 transition">
-                        <td className="px-2 sm:px-4 py-2 sm:py-3">{i + 1}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell font-mono text-[10px] sm:text-xs">{order.id?.slice(0, 8)}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 truncate max-w-[80px] sm:max-w-[100px]">{order.customerName || order.customerEmail || "Guest"}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">{order.items?.length || 0}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium">৳{order.totalPrice || 0}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden md:table-cell text-[10px] sm:text-xs">{order.createdAt ? new Date(order.createdAt).toLocaleString() : "N/A"}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3"><span className="px-2 py-1 rounded-full text-[10px] sm:text-xs bg-yellow-100 text-yellow-700">⏳ Pending</span></td>
+                  <tbody className="divide-y divide-gray-100">
+                    {offlineOrders.map((order, index) => (
+                      <tr key={index} className="hover:bg-purple-50 transition duration-150">
+                        <td className="px-4 py-3 text-gray-500">{index + 1}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-700 bg-gray-50 px-2 py-1 rounded">
+                          {order.id?.slice(0, 8) || 'N/A'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 text-sm font-bold">
+                              {order.customerName?.charAt(0).toUpperCase() || 'G'}
+                            </div>
+                            <span className="font-medium text-gray-800">{order.customerName || 'Guest'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs">
+                            {order.items?.length || 0}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-800">৳{order.totalPrice?.toFixed(2) || '0.00'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">
+                          {order.createdAt ? new Date(order.createdAt).toLocaleString() : 'N/A'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                            <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse"></span>
+                            Pending
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {offlineOrders.length > 20 && (
-                  <div className="p-3 text-center text-xs text-gray-400">Showing 20 of {offlineOrders.length} orders</div>
-                )}
               </div>
             )}
           </div>
@@ -1217,39 +1394,60 @@ export default function AdminDashboard() {
         {activeTab === "synced-orders" && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <div className="p-3 sm:p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <h2 className="text-sm sm:text-base md:text-lg font-bold">✅ Synced Orders ({syncedOrders.length})</h2>
-              <button onClick={handleRefresh} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700">🔄 Refresh</button>
+              <div>
+                <h2 className="text-sm sm:text-base md:text-lg font-bold">✅ Synced Orders</h2>
+                <p className="text-xs sm:text-sm text-gray-500">Orders synced to Firebase</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold">
+                  {syncedOrders.length} synced
+                </span>
+                <button onClick={handleRefresh} className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
             </div>
             {loading ? (
               <div className="p-6 text-center text-gray-500 text-sm">Loading orders...</div>
             ) : syncedOrders.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-sm">No synced orders yet.</div>
+              <div className="p-8 text-center text-gray-500">
+                <div className="text-5xl mb-3">📭</div>
+                <p className="text-base font-medium">No synced orders yet</p>
+                <p className="text-sm text-gray-400 mt-1">Orders will appear here after sync</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs sm:text-sm">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Order ID</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden sm:table-cell">Customer</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Items</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Total</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left hidden md:table-cell">Date</th>
-                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">Status</th>
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-medium">Order ID</th>
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-medium hidden sm:table-cell">Customer</th>
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-medium">Items</th>
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-medium">Total</th>
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-medium hidden md:table-cell">Date</th>
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-medium">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-100">
                     {syncedOrders.slice(0, 20).map((order) => (
-                      <tr key={order.id} className="border-t hover:bg-gray-50 transition">
+                      <tr key={order.id} className="hover:bg-gray-50 transition duration-150">
                         <td className="px-2 sm:px-4 py-2 sm:py-3 font-mono text-[10px] sm:text-xs">{order.id?.slice(0, 8)}</td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell truncate max-w-[80px]">{order.customerEmail || "Guest"}</td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">{order.items?.length || 0}</td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium">৳{order.totalPrice || 0}</td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden md:table-cell text-[10px] sm:text-xs">{order.createdAt?.toDate?.().toLocaleDateString() || "N/A"}</td>
+                        <td className="px-2 sm:px-4 py-2 sm:py-3 hidden md:table-cell text-[10px] sm:text-xs text-gray-500">
+                          {order.createdAt?.toDate?.().toLocaleDateString() || "N/A"}
+                        </td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3">
                           <span className={`px-2 py-1 rounded-full text-[10px] sm:text-xs ${
-                            order.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                            order.status === 'shipped' ? 'bg-blue-100 text-blue-700' :
-                            'bg-yellow-100 text-yellow-700'
+                            order.status === 'delivered' || order.status === 'completed'
+                              ? 'bg-green-100 text-green-700'
+                              : order.status === 'shipped'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-yellow-100 text-yellow-700'
                           }`}>
                             {order.status || 'pending'}
                           </span>
@@ -1271,4 +1469,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
- }
+}

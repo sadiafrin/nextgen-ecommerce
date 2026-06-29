@@ -326,7 +326,7 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ ১. Register (Offline + Online + Cross-Device)
+  // ✅ ১. Register (Offline + Online + Cross-Device) - Offline Log যোগ করা হয়েছে
   const register = async (email, password, name) => {
     console.log('📝 REGISTER FUNCTION CALLED!');
     console.log('📝 Name:', name, 'Email:', email);
@@ -404,11 +404,21 @@ export function AuthProvider({ children }) {
         }
         
       } else {
-        // 📦 Offline Register
+        // 📦 Offline Register with Log
         console.log('📦 OFFLINE REGISTRATION FLOW STARTED!');
         
         const offlineUser = saveOfflineUser(email, password, name);
         setUser(offlineUser);
+        
+        // ✅ Offline Registration Log (NEW)
+        try {
+          const offlineLogs = JSON.parse(localStorage.getItem('offlineLogs') || '{"registered":0,"logins":0,"orders":0}');
+          offlineLogs.registered += 1;
+          localStorage.setItem('offlineLogs', JSON.stringify(offlineLogs));
+          console.log('📊 Offline Registration Logged:', offlineLogs);
+        } catch (logError) {
+          console.error('❌ Error logging offline registration:', logError);
+        }
         
         const msg = '📦 You are offline. Registration saved. Will sync when online.';
         if (window.showToast) window.showToast(msg, 'offline');
@@ -423,7 +433,7 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ ২. Login (Offline + Online + Cross-Device) - সম্পূর্ণ ফিক্সড
+  // ✅ ২. Login (Offline + Online + Cross-Device) - Offline Log যোগ করা হয়েছে
   const login = async (email, password) => {
     console.log('🔑 LOGIN FUNCTION CALLED!');
     console.log('📡 Current online status:', navigator.onLine);
@@ -466,6 +476,16 @@ export function AuthProvider({ children }) {
         };
         setUser(offlineUser);
         localStorage.setItem('user', JSON.stringify(offlineUser));
+        
+        // ✅ Offline Login Log (NEW)
+        try {
+          const offlineLogs = JSON.parse(localStorage.getItem('offlineLogs') || '{"registered":0,"logins":0,"orders":0}');
+          offlineLogs.logins += 1;
+          localStorage.setItem('offlineLogs', JSON.stringify(offlineLogs));
+          console.log('📊 Offline Login Logged:', offlineLogs);
+        } catch (logError) {
+          console.error('❌ Error logging offline login:', logError);
+        }
         
         const msg = '📡 Offline login successful! Will sync when online.';
         if (window.showToast) window.showToast(msg, 'offline');
@@ -536,6 +556,16 @@ export function AuthProvider({ children }) {
             };
             setUser(offlineUser);
             localStorage.setItem('user', JSON.stringify(offlineUser));
+            
+            // ✅ Offline Login Log (NEW)
+            try {
+              const offlineLogs = JSON.parse(localStorage.getItem('offlineLogs') || '{"registered":0,"logins":0,"orders":0}');
+              offlineLogs.logins += 1;
+              localStorage.setItem('offlineLogs', JSON.stringify(offlineLogs));
+              console.log('📊 Offline Login Logged (fallback):', offlineLogs);
+            } catch (logError) {
+              console.error('❌ Error logging offline login:', logError);
+            }
             
             const msg = '📡 Logged in with offline account (network fallback).';
             if (window.showToast) window.showToast(msg, 'offline');
