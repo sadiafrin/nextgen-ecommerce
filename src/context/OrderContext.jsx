@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { 
   collection, addDoc, getDocs, query, where, orderBy, 
   doc, getDoc, updateDoc, setDoc, increment, deleteDoc,
-  serverTimestamp 
+  serverTimestamp, onSnapshot
 } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 
@@ -18,6 +18,7 @@ export function OrderProvider({ children }) {
   const [offlineOrders, setOfflineOrders] = useState([]);
   const [error, setError] = useState(null);
   const hasLoadedRef = useRef(false);
+  const unsubscribeRef = useRef(null);
 
   // ✅ Delivery Charge - Fixed
   const DELIVERY_CHARGE = 60;
@@ -115,7 +116,6 @@ export function OrderProvider({ children }) {
           ? new Date(existingData.lastUpdated).getFullYear() 
           : -1;
         
-        // ✅ Monthly Sales রিসেট (নতুন মাস হলে)
         let monthlySales = existingData.monthlySales || 0;
         if (existingMonth !== currentMonth || existingYear !== currentYear) {
           monthlySales = 0;
@@ -125,7 +125,7 @@ export function OrderProvider({ children }) {
           totalOrders: increment(1),
           monthlySales: increment(totalAmount),
           totalLogins: increment(1),
-          lastUpdated: currentDate // ✅ আজকের তারিখ
+          lastUpdated: currentDate
         };
         
         if (isNewCustomer) {
@@ -149,6 +149,195 @@ export function OrderProvider({ children }) {
     }
   }, []);
 
+  // ✅ Cross-Device: Listen to Firebase orders (Real-time)
+  const listenToFirebaseOrders = useCallback(() => {
+    if (!user || !navigator.onLine) {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      return;
+    }
+
+    console.log('📡 Listening to Firebase orders for user:', user.uid);
+
+    const q = query(
+      collection(db, 'orders'),
+      where('customerId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    unsubscribeRef.current = onSnapshot(q, (snapshot) => {
+      const firebaseOrders = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        isOffline: false,
+        synced: true
+      }));
+
+      // ✅ Merge with offline orders
+      const pendingOrders = loadPendingOrders();
+      const allOrders = [...firebaseOrders, ...pendingOrders];
+
+      // Sort by date
+      allOrders.sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0);
+        const dateB = new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
+
+      setOrders(allOrders);
+      setSyncedOrders(firebaseOrders);
+      console.log('🔄 Firebase orders updated:', firebaseOrders.length);
+      hasLoadedRef.current = true;
+    }, (error) => {
+      console.error('❌ Error listening to orders:', error);
+    });
+
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, [user, loadPendingOrders]);
+
+  // ✅ Cross-Device: Sync offline orders to Firebase
+  const syncOfflineOrders = useCallback(async () => {
+    if (!navigator.onLine) {
+      console.log('📡 Offline, skipping sync');
+      return;
+    }
+
+    if (!user) {
+      console.log('👤 No user, skipping sync');
+      return;
+    }
+
+    const pendingOrders = loadPendingOrders();
+    const pendingSync = pendingOrders.filter(o => !o.synced && o.customerId === user.uid);
+
+    if (pendingSync.length === 0) {
+      console.log('✅ No offline orders to sync');
+      return;
+    }
+
+    console.log(`🔄 Syncing ${pendingSync.length} offline orders to Firebase...`);
+
+    let syncedCount = 0;
+    let totalAmount = 0;
+    const ordersToRemove = [];
+
+    for (const order of pendingSync) {
+      try {
+        // Check if order already exists in Firebase
+        const ordersRef = collection(db, 'orders');
+        const q = query(ordersRef, where('orderId', '==', order.id));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          console.log(`⚠️ Order ${order.id} already exists in Firebase, skipping...`);
+          ordersToRemove.push(order.id);
+          continue;
+        }
+
+        const orderTotal = order.totalPrice || 0;
+        totalAmount += orderTotal;
+        
+        const orderData = {
+          ...order,
+          customerId: order.customerId || user.uid,
+          customerEmail: order.customerEmail || user.email || 'guest@email.com',
+          customerName: order.customerName || user.displayName || 'Guest',
+          syncedAt: serverTimestamp(),
+          isOffline: true,
+          synced: true,
+          syncedFrom: 'offline'
+        };
+
+        // Remove id from data
+        const { id, ...orderWithoutId } = orderData;
+        await addDoc(collection(db, 'orders'), orderWithoutId);
+        
+        ordersToRemove.push(order.id);
+        syncedCount++;
+        console.log(`✅ Synced order: ${order.id}`);
+        
+      } catch (error) {
+        console.error(`❌ Failed to sync order ${order.id}:`, error);
+      }
+    }
+
+    // Remove synced orders from pending
+    if (ordersToRemove.length > 0) {
+      const updatedOrders = pendingOrders.filter(o => !ordersToRemove.includes(o.id));
+      saveOfflineOrders(updatedOrders);
+      console.log(`✅ Removed ${ordersToRemove.length} synced orders from pending`);
+    }
+
+    // ✅ Stats Update for synced orders
+    if (syncedCount > 0) {
+      try {
+        const statsRef = doc(db, 'adminStats', 'stats');
+        const statsSnap = await getDoc(statsRef);
+        const currentDate = new Date().toISOString();
+        
+        if (statsSnap.exists()) {
+          await updateDoc(statsRef, {
+            totalOrders: increment(syncedCount),
+            monthlySales: increment(totalAmount),
+            lastUpdated: currentDate
+          });
+          console.log(`✅ Stats updated for ${syncedCount} synced orders`);
+        }
+      } catch (statsError) {
+        console.error('❌ Stats update error during sync:', statsError);
+      }
+    }
+
+    // ✅ Update local orders state
+    if (syncedCount > 0) {
+      const updatedPending = loadPendingOrders();
+      const firebaseOrders = orders.filter(o => !o.isOffline);
+      const allOrders = [...firebaseOrders, ...updatedPending];
+      allOrders.sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0);
+        const dateB = new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
+      setOrders(allOrders);
+    }
+
+    return syncedCount;
+  }, [user, loadPendingOrders, saveOfflineOrders, orders]);
+
+  // ✅ Cross-Device: Sync Firebase orders to localStorage
+  const syncFirebaseOrdersToLocal = useCallback(async () => {
+    if (!user || !navigator.onLine) return;
+
+    try {
+      const q = query(
+        collection(db, 'orders'),
+        where('customerId', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const firebaseOrders = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      localStorage.setItem('syncedOrders', JSON.stringify(firebaseOrders));
+      console.log('🔄 Synced Firebase orders to localStorage:', firebaseOrders.length);
+      
+      return firebaseOrders;
+    } catch (error) {
+      console.error('❌ Error syncing orders from Firebase:', error);
+      return [];
+    }
+  }, [user]);
+
   // ✅ অর্ডার প্লেস করুন
   const placeOrder = useCallback(async (items, totalPrice, deliveryInfo = null) => {
     if (!user) {
@@ -164,7 +353,6 @@ export function OrderProvider({ children }) {
     }
 
     try {
-      // ✅ আইটেম প্রসেস করুন
       const orderItems = items.map(item => ({
         id: item.id || `item_${Date.now()}`,
         name: item.name || 'Unknown Product',
@@ -176,7 +364,6 @@ export function OrderProvider({ children }) {
         category: item.category || 'General'
       }));
 
-      // ✅ টোটাল ক্যালকুলেট
       const subtotal = calculateOrderTotal(orderItems);
       const deliveryCharge = DELIVERY_CHARGE;
       const discount = 0;
@@ -194,6 +381,7 @@ export function OrderProvider({ children }) {
         discount: discount,
         deliveryInfo: deliveryInfo || null,
         status: 'pending',
+        orderId: `ord_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -201,19 +389,19 @@ export function OrderProvider({ children }) {
       const isOnline = navigator.onLine;
 
       if (isOnline) {
-        // ✅ অনলাইন অর্ডার
+        // ✅ Online Order
         const docRef = await addDoc(collection(db, 'orders'), {
           ...orderData,
           status: 'confirmed',
           createdAt: new Date(),
           updatedAt: new Date(),
-          isOffline: false
+          isOffline: false,
+          synced: true
         });
 
-        // ✅ Stats আপডেট - lastUpdated সহ
         await updateStats(finalTotal, true);
 
-        const newOrder = { id: docRef.id, ...orderData, status: 'confirmed', isOffline: false };
+        const newOrder = { id: docRef.id, ...orderData, status: 'confirmed', isOffline: false, synced: true };
         setOrders(prev => [newOrder, ...prev]);
         setCurrentOrder(newOrder);
 
@@ -222,7 +410,7 @@ export function OrderProvider({ children }) {
         }
         return docRef.id;
       } else {
-        // ✅ অফলাইন অর্ডার
+        // ✅ Offline Order
         const offlineOrder = saveOrderOffline(orderData);
         
         if (offlineOrder) {
@@ -269,6 +457,7 @@ export function OrderProvider({ children }) {
             id: doc.id,
             ...doc.data(),
             isOffline: false,
+            synced: true,
             createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
           }));
           allOrders = [...allOrders, ...firebaseOrders];
@@ -281,6 +470,7 @@ export function OrderProvider({ children }) {
               id: doc.id,
               ...doc.data(),
               isOffline: false,
+              synced: true,
               createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt
             }));
             const userOrders = allFirebaseOrders.filter(o => o.customerId === user.uid);
@@ -293,16 +483,15 @@ export function OrderProvider({ children }) {
       const pendingOrders = loadPendingOrders();
       const userPending = pendingOrders.filter(order => order.customerId === user.uid);
       
-      // ✅ অফলাইন অর্ডারের টোটাল রিক্যালকুলেট
       const processedPending = userPending.map(order => ({
         ...order,
         subtotal: calculateOrderTotal(order.items),
-        totalPrice: calculateOrderTotal(order.items) + (order.deliveryCharge || DELIVERY_CHARGE) - (order.discount || 0)
+        totalPrice: calculateOrderTotal(order.items) + (order.deliveryCharge || DELIVERY_CHARGE) - (order.discount || 0),
+        synced: false
       }));
       
       allOrders = [...allOrders, ...processedPending];
 
-      // ✅ ডেট অনুযায়ী সাজানো
       allOrders.sort((a, b) => {
         const dateA = new Date(a.createdAt || 0);
         const dateB = new Date(b.createdAt || 0);
@@ -347,7 +536,7 @@ export function OrderProvider({ children }) {
   const getOrderById = useCallback(async (orderId) => {
     try {
       const pendingOrders = loadPendingOrders();
-      const offlineOrder = pendingOrders.find(o => o.id === orderId);
+      const offlineOrder = pendingOrders.find(o => o.id === orderId || o.orderId === orderId);
       if (offlineOrder) {
         return {
           ...offlineOrder,
@@ -374,16 +563,16 @@ export function OrderProvider({ children }) {
   const updateOrderStatus = useCallback(async (orderId, newStatus) => {
     try {
       const pendingOrders = loadPendingOrders();
-      const offlineOrder = pendingOrders.find(o => o.id === orderId);
+      const offlineOrder = pendingOrders.find(o => o.id === orderId || o.orderId === orderId);
       
       if (offlineOrder) {
         const updatedOrders = pendingOrders.map(o => 
-          o.id === orderId ? { ...o, status: newStatus, updatedAt: new Date().toISOString() } : o
+          (o.id === orderId || o.orderId === orderId) ? { ...o, status: newStatus, updatedAt: new Date().toISOString() } : o
         );
         saveOfflineOrders(updatedOrders);
         
         setOrders(prev => prev.map(order => 
-          order.id === orderId ? { ...order, status: newStatus } : order
+          (order.id === orderId || order.orderId === orderId) ? { ...order, status: newStatus } : order
         ));
         return true;
       }
@@ -412,13 +601,13 @@ export function OrderProvider({ children }) {
   const deleteOrder = useCallback(async (orderId) => {
     try {
       const pendingOrders = loadPendingOrders();
-      const offlineOrder = pendingOrders.find(o => o.id === orderId);
+      const offlineOrder = pendingOrders.find(o => o.id === orderId || o.orderId === orderId);
       
       if (offlineOrder) {
-        const updatedOrders = pendingOrders.filter(o => o.id !== orderId);
+        const updatedOrders = pendingOrders.filter(o => o.id !== orderId && o.orderId !== orderId);
         saveOfflineOrders(updatedOrders);
         
-        setOrders(prev => prev.filter(order => order.id !== orderId));
+        setOrders(prev => prev.filter(order => order.id !== orderId && order.orderId !== orderId));
         return true;
       }
 
@@ -435,7 +624,7 @@ export function OrderProvider({ children }) {
     }
   }, [loadPendingOrders, saveOfflineOrders]);
 
-  // ✅ ইনভয়েস জেনারেট - Delivery Charge সহ
+  // ✅ ইনভয়েস জেনারেট
   const generateInvoice = useCallback((order) => {
     if (!order) return null;
 
@@ -446,7 +635,7 @@ export function OrderProvider({ children }) {
     const total = subtotal - discount + deliveryCharge;
     
     return {
-      invoiceNumber: `INV-${order.id?.slice(0, 8) || Date.now()}`,
+      invoiceNumber: `INV-${order.id?.slice(0, 8) || order.orderId?.slice(0, 8) || Date.now()}`,
       date: order.createdAt || new Date().toISOString(),
       customerName: order.customerName || order.customerEmail || 'Guest',
       customerEmail: order.customerEmail || 'N/A',
@@ -466,92 +655,13 @@ export function OrderProvider({ children }) {
     };
   }, [calculateOrderTotal]);
 
-  // ✅ অফলাইন অর্ডার সিঙ্ক - Stats Update সহ
-  const syncOfflineOrders = useCallback(async () => {
-    if (!navigator.onLine) {
-      console.log('📡 Offline, skipping sync');
-      return;
-    }
-
-    if (!user) {
-      console.log('👤 No user, skipping sync');
-      return;
-    }
-
-    const pendingOrders = loadPendingOrders();
-    const pendingSync = pendingOrders.filter(o => !o.synced && o.customerId === user.uid);
-
-    if (pendingSync.length === 0) {
-      console.log('✅ No offline orders to sync');
-      return;
-    }
-
-    console.log(`🔄 Syncing ${pendingSync.length} offline orders...`);
-
-    let syncedCount = 0;
-    let totalAmount = 0;
-    
-    for (const order of pendingSync) {
-      try {
-        const orderTotal = order.totalPrice || 0;
-        totalAmount += orderTotal;
-        
-        const orderData = {
-          customerId: order.customerId,
-          customerEmail: order.customerEmail,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone || '',
-          items: order.items || [],
-          subtotal: order.subtotal || calculateOrderTotal(order.items),
-          totalPrice: orderTotal,
-          deliveryCharge: order.deliveryCharge || DELIVERY_CHARGE,
-          discount: order.discount || 0,
-          deliveryInfo: order.deliveryInfo || null,
-          status: order.status || 'pending',
-          createdAt: new Date(order.createdAt),
-          isOffline: true,
-          syncedAt: new Date().toISOString()
-        };
-
-        const docRef = await addDoc(collection(db, 'orders'), orderData);
-        console.log(`✅ Order synced with ID: ${docRef.id}`);
-
-        const updatedOrders = pendingOrders.filter(o => o.id !== order.id);
-        saveOfflineOrders(updatedOrders);
-        
-        setOrders(prev => prev.map(o => 
-          o.id === order.id ? { ...o, synced: true, firebaseId: docRef.id } : o
-        ));
-        
-        syncedCount++;
-        
-      } catch (error) {
-        console.error(`❌ Failed to sync order ${order.id}:`, error);
-      }
-    }
-
-    // ✅ Stats Update for synced orders
-    if (syncedCount > 0) {
-      try {
-        const statsRef = doc(db, 'adminStats', 'stats');
-        const statsSnap = await getDoc(statsRef);
-        const currentDate = new Date().toISOString();
-        
-        if (statsSnap.exists()) {
-          await updateDoc(statsRef, {
-            totalOrders: increment(syncedCount),
-            monthlySales: increment(totalAmount),
-            lastUpdated: currentDate
-          });
-          console.log(`✅ Stats updated for ${syncedCount} synced orders`);
-        }
-      } catch (statsError) {
-        console.error('❌ Stats update error during sync:', statsError);
-      }
-      
-      await loadUserOrders();
-    }
-  }, [user, loadPendingOrders, saveOfflineOrders, loadUserOrders, calculateOrderTotal]);
+  // ✅ Real-time listener setup
+  useEffect(() => {
+    const cleanup = listenToFirebaseOrders();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [listenToFirebaseOrders]);
 
   // ✅ ইউজার চেঞ্জ হলে অর্ডার লোড
   useEffect(() => {
@@ -560,6 +670,10 @@ export function OrderProvider({ children }) {
     } else if (!user) {
       setOrders([]);
       hasLoadedRef.current = false;
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
     }
   }, [user, loadUserOrders]);
 
@@ -568,13 +682,16 @@ export function OrderProvider({ children }) {
     const handleOnline = () => {
       if (navigator.onLine && user) {
         console.log('🌐 Online detected, syncing offline orders...');
-        syncOfflineOrders();
+        setTimeout(() => {
+          syncOfflineOrders();
+          syncFirebaseOrdersToLocal();
+        }, 1000);
       }
     };
 
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [user, syncOfflineOrders]);
+  }, [user, syncOfflineOrders, syncFirebaseOrdersToLocal]);
 
   const value = {
     orders,
@@ -591,6 +708,7 @@ export function OrderProvider({ children }) {
     updateOrderStatus,
     deleteOrder,
     syncOfflineOrders,
+    syncFirebaseOrdersToLocal,
     generateInvoice,
     loadOfflineOrders,
     calculateOrderTotal,
